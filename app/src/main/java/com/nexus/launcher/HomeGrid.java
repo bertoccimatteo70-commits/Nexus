@@ -159,8 +159,8 @@ public class HomeGrid extends GridView {
         icon.setLayoutParams(iconParams);
         icon.setImageResource(R.drawable.ic_apps);
         icon.setColorFilter(settings.textColor(context));
-        icon.setPadding(Ui.dp(context, iconSizePx * 0.18f), Ui.dp(context, iconSizePx * 0.18f),
-                Ui.dp(context, iconSizePx * 0.18f), Ui.dp(context, iconSizePx * 0.18f));
+        int inset = Math.round(iconSizePx * 0.2f);
+        icon.setPadding(inset, inset, inset, inset);
         icon.setAlpha(0.85f);
 
         TextView label = new TextView(context);
