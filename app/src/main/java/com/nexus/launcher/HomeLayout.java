@@ -18,6 +18,7 @@ import java.util.Set;
 public class HomeLayout {
 
     private static final String KEY_LAYOUT = "home_layout_v2";
+    private static final String KEY_LITE_LAYOUT = "home_layout_lite_v1";
     private static final int DEFAULT_PAGE_COUNT = 3;
     private static final int CENTER_PAGE = 1;
 
@@ -28,10 +29,13 @@ public class HomeLayout {
 
     private final SharedPreferences prefs;
     private final List<Page> pages = new ArrayList<>();
+    private final String layoutKey;
 
-    public HomeLayout(Context context) {
+    /** Nexus and Nexus Lite keep separate layouts, so switching mode never loses shortcuts. */
+    public HomeLayout(Context context, boolean lite) {
         this.prefs = context.getApplicationContext().getSharedPreferences(
                 "nexus_launcher_prefs", Context.MODE_PRIVATE);
+        this.layoutKey = lite ? KEY_LITE_LAYOUT : KEY_LAYOUT;
         load();
     }
 
@@ -39,7 +43,7 @@ public class HomeLayout {
 
     private void load() {
         pages.clear();
-        String raw = prefs.getString(KEY_LAYOUT, null);
+        String raw = prefs.getString(layoutKey, null);
         if (raw == null || raw.isEmpty()) {
             return;
         }
@@ -84,13 +88,17 @@ public class HomeLayout {
             }
             JSONObject root = new JSONObject();
             root.put("pages", pageArray);
-            prefs.edit().putString(KEY_LAYOUT, root.toString()).apply();
+            prefs.edit().putString(layoutKey, root.toString()).apply();
         } catch (Exception ignored) {
             // nothing sensible to do, the in-memory layout stays valid
         }
     }
 
     // ------------------------------------------------------------------ pages
+
+    public boolean isLiteLayout() {
+        return KEY_LITE_LAYOUT.equals(layoutKey);
+    }
 
     public int pageCount() {
         return pages.size();
@@ -128,6 +136,46 @@ public class HomeLayout {
         if (apps != null) {
             for (int i = 0; i < apps.size() && center.items.size() < limit; i++) {
                 center.items.add(HomeItem.app(apps.get(i).getPackageName()));
+            }
+        }
+        save();
+    }
+
+    /**
+     * Nexus Lite starts from one clean page with the shortcuts people expect most: phone,
+     * messages, camera and settings, only when those apps are actually installed.
+     */
+    public void ensureLiteDefaults(List<AppInfo> apps) {
+        if (!pages.isEmpty()) {
+            return;
+        }
+        Page page = new Page();
+        pages.add(page);
+        String[][] slots = {
+                {"dialer", "telefono", "phone", "telecom"},
+                {"messagg", "message", "sms", "mms"},
+                {"camera", "fotocamera"},
+                {"settings", "impostazioni"}
+        };
+        if (apps != null) {
+            for (String[] keywords : slots) {
+                for (AppInfo app : apps) {
+                    String pkg = app.getPackageName().toLowerCase();
+                    String label = app.getLabel().toLowerCase();
+                    boolean found = false;
+                    for (String keyword : keywords) {
+                        if (pkg.contains(keyword) || label.contains(keyword)) {
+                            found = true;
+                            break;
+                        }
+                    }
+                    if (found) {
+                        if (!contains(app.getPackageName())) {
+                            page.items.add(HomeItem.app(app.getPackageName()));
+                        }
+                        break;
+                    }
+                }
             }
         }
         save();
@@ -186,7 +234,7 @@ public class HomeLayout {
 
     public void reset() {
         pages.clear();
-        prefs.edit().remove(KEY_LAYOUT).apply();
+        prefs.edit().remove(layoutKey).apply();
     }
 
     /**

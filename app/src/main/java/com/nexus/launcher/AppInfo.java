@@ -35,9 +35,11 @@ public class AppInfo {
 
     private Drawable icon;
     private Intent launchIntent;
-    private Drawable roundedIcon;
-    private int roundedIconSize = -1;
-    private int roundedIconShape = -1;
+    /** Two rounded variants are enough: the home grid and the dock differ by a few pixels. */
+    private final int[] roundedSizes = {-1, -1};
+    private final int[] roundedShapes = {-1, -1};
+    private final Drawable[] roundedCache = new Drawable[2];
+    private int roundedSlot;
 
     private AppInfo(PackageManager packageManager, ResolveInfo resolveInfo, String label) {
         this.packageManager = packageManager;
@@ -131,12 +133,19 @@ public class AppInfo {
     }
 
     public Drawable getRoundedIcon(int sizePx, int shape) {
-        if (roundedIcon == null || roundedIconSize != sizePx || roundedIconShape != shape) {
-            roundedIcon = MainActivity.roundIcon(getIcon(), sizePx, shape);
-            roundedIconSize = sizePx;
-            roundedIconShape = shape;
+        for (int i = 0; i < roundedCache.length; i++) {
+            if (roundedSizes[i] == sizePx && roundedShapes[i] == shape
+                    && roundedCache[i] != null) {
+                roundedSlot = (i + 1) % roundedCache.length;
+                return roundedCache[i];
+            }
         }
-        return roundedIcon;
+        Drawable rounded = MainActivity.roundIcon(getIcon(), sizePx, shape);
+        roundedSizes[roundedSlot] = sizePx;
+        roundedShapes[roundedSlot] = shape;
+        roundedCache[roundedSlot] = rounded;
+        roundedSlot = (roundedSlot + 1) % roundedCache.length;
+        return rounded;
     }
 
     @Override

@@ -70,6 +70,7 @@ public class HomeScreen extends FrameLayout {
     private int wallpaperRequest;
     private String wallpaperPath;
     private Bitmap wallpaperBitmap;
+    private Drawable systemWallpaperDrawable;
     private int drawerGeneration;
 
     private final Runnable prewarmDrawer = new Runnable() {
@@ -94,7 +95,7 @@ public class HomeScreen extends FrameLayout {
         super(activity);
         this.activity = activity;
         this.settings = settings;
-        this.layout = new HomeLayout(activity);
+        this.layout = new HomeLayout(activity, settings.isLite());
         this.widgetHost = new WidgetHost(activity, settings);
         this.wallpaperPicker = new WallpaperPickerDialog(activity, settings, new Runnable() {
             @Override
@@ -146,6 +147,8 @@ public class HomeScreen extends FrameLayout {
 
         wallpaperView = new ImageView(activity);
         wallpaperView.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        wallpaperView.setScaleX(1.12f);
+        wallpaperView.setScaleY(1.12f);
         addView(wallpaperView, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
 
@@ -168,6 +171,8 @@ public class HomeScreen extends FrameLayout {
                 LinearLayout.LayoutParams.MATCH_PARENT, Ui.dp(activity, 48));
         searchParams.topMargin = Ui.dp(activity, 14);
         column.addView(searchBar, searchParams);
+        // Nexus Lite keeps the home uncluttered: search lives in the drawer, where it is labelled.
+        searchBar.setVisibility(settings.isLite() ? GONE : VISIBLE);
         searchBar.setOnQueryChangeListener(new SearchBar.OnQueryChangeListener() {
             @Override
             public void onQueryChanged(String query) {
@@ -207,6 +212,16 @@ public class HomeScreen extends FrameLayout {
             @Override
             public void onWidgetMenu(HomeItem item, int pageIndex) {
                 showWidgetMenu(item);
+            }
+
+            @Override
+            public void onItemLongPress(HomeItem item, int pageIndex) {
+                showLiteItemMenu(item);
+            }
+
+            @Override
+            public void onPageScrolled(float pagePosition) {
+                updateWallpaperParallax(pagePosition);
             }
         });
 
@@ -291,7 +306,9 @@ public class HomeScreen extends FrameLayout {
         }
         allApps.clear();
         appIndex.clear();
-        Set<String> hidden = new HashSet<>(settings.getHiddenPackages());
+        // Nexus Lite always shows every installed app: simplicity means nothing goes missing.
+        Set<String> hidden = settings.isLite()
+                ? new HashSet<String>() : new HashSet<>(settings.getHiddenPackages());
         for (AppInfo app : AppInfo.load(activity)) {
             if (hidden.contains(app.getPackageName())) {
                 continue;
@@ -301,11 +318,18 @@ public class HomeScreen extends FrameLayout {
         }
         Set<String> installed = new HashSet<>(appIndex.keySet());
         layout.removePackages(hidden);
-        int capacity = defaultCapacity();
-        layout.ensureDefaults(allApps, capacity);
+        if (settings.isLite()) {
+            layout.ensureLiteDefaults(allApps);
+        } else {
+            layout.ensureDefaults(allApps, defaultCapacity());
+        }
         layout.prune(installed);
         if (layout.pageCount() == 0) {
-            layout.ensureDefaults(allApps, capacity);
+            if (settings.isLite()) {
+                layout.ensureLiteDefaults(allApps);
+            } else {
+                layout.ensureDefaults(allApps, defaultCapacity());
+            }
         }
         ensureDefaultDock();
         dock.setApps(allApps);
@@ -314,6 +338,10 @@ public class HomeScreen extends FrameLayout {
 
     private void ensureDefaultDock() {
         if (!settings.getDockPackages().isEmpty()) {
+            return;
+        }
+        if (settings.isLite()) {
+            ensureLiteDock();
             return;
         }
         String[] keywords = {"whatsapp", "telegram", "messagg", "messag", "gmail", "photo", "foto",
@@ -344,6 +372,37 @@ public class HomeScreen extends FrameLayout {
             }
         }
         settings.setDockPackages(chosen);
+    }
+
+    /** Lite dock defaults to the four everyday apps, only when installed. */
+    private void ensureLiteDock() {
+        String[][] slots = {
+                {"dialer", "telefono", "phone", "telecom"},
+                {"messagg", "message", "sms", "mms"},
+                {"camera", "fotocamera"},
+                {"settings", "impostazioni"}
+        };
+        List<String> chosen = new ArrayList<>();
+        for (String[] keywords : slots) {
+            for (AppInfo app : allApps) {
+                String pkg = app.getPackageName().toLowerCase();
+                String label = app.getLabel().toLowerCase();
+                boolean match = false;
+                for (String keyword : keywords) {
+                    if (pkg.contains(keyword) || label.contains(keyword)) {
+                        match = true;
+                        break;
+                    }
+                }
+                if (match && !chosen.contains(app.getPackageName())) {
+                    chosen.add(app.getPackageName());
+                    break;
+                }
+            }
+        }
+        if (!chosen.isEmpty()) {
+            settings.setDockPackages(chosen);
+        }
     }
 
     /** Conservative page capacity used when creating the very first layout. */
@@ -499,7 +558,7 @@ public class HomeScreen extends FrameLayout {
             return;
         }
         settingsHub = new SettingsHub(activity, this);
-        boolean animate = settings.animationsEnabled() && !settings.isLite();
+        boolean animate = settings.decorAnimationsEnabled();
         if (animate) {
             settingsHub.setAlpha(0f);
         }
@@ -517,7 +576,7 @@ public class HomeScreen extends FrameLayout {
         final SettingsHub target = settingsHub;
         settingsHub = null;
         searchBar.hideKeyboard();
-        boolean animate = settings.animationsEnabled() && !settings.isLite();
+        boolean animate = settings.decorAnimationsEnabled();
         if (animate) {
             target.animate().alpha(0f).setDuration(settings.animDuration(160))
                     .withEndAction(new Runnable() {
@@ -568,6 +627,10 @@ public class HomeScreen extends FrameLayout {
     }
 
     public void requestAddWidget() {
+        if (settings.isLite()) {
+            toast("Nexus Lite non aggiunge widget: passa a Nexus per farlo");
+            return;
+        }
         widgetHost.pickWidget();
     }
 
@@ -629,7 +692,11 @@ public class HomeScreen extends FrameLayout {
 
     public void resetHomeLayout() {
         layout.reset();
-        layout.ensureDefaults(allApps, defaultCapacity());
+        if (settings.isLite()) {
+            layout.ensureLiteDefaults(allApps);
+        } else {
+            layout.ensureDefaults(allApps, defaultCapacity());
+        }
         layout.prune(appIndex.keySet());
         pager.setCurrentPage(layout.defaultPage(), false);
         pager.rebuild();
@@ -666,14 +733,58 @@ public class HomeScreen extends FrameLayout {
     public void onSettingsChanged() {
         drawerGeneration++;
         cachedDrawer = null;
+        if (layout.isLiteLayout() != settings.isLite()) {
+            layout = new HomeLayout(activity, settings.isLite());
+            pager.setLayout(layout);
+            searchBar.setVisibility(settings.isLite() ? GONE : VISIBLE);
+            reloadApps();
+        }
         applyTheme();
         applyBackground();
         dock.applyTheme();
         dock.setApps(allApps);
         pager.rebuild();
+        activity.applyPreferredRefreshRate();
         if (drawerOpen) {
             closeDrawer();
         }
+    }
+
+    /** Nexus Lite: long press offers removal instead of starting a drag. */
+    private void showLiteItemMenu(final HomeItem item) {
+        if (item == null) {
+            return;
+        }
+        String label = item.isApp()
+                ? (appIndex.containsKey(item.getPackageName())
+                ? appIndex.get(item.getPackageName()).getLabel()
+                : item.getPackageName())
+                : item.getLabel();
+        SettingsSheet.actions(activity, settings, label,
+                "Rimuovi la scorciatoia dalla home: l'app resta installata.",
+                new String[]{"Rimuovi dalla home"}, new SettingsSheet.OnSelect() {
+                    @Override
+                    public void onSelect(int index) {
+                        if (index == 0 && layout.removeItem(item)) {
+                            pager.rebuild();
+                            toast("Scorciatoia rimossa");
+                        }
+                    }
+                });
+    }
+
+    /** Wallpaper follows the pages at a fraction of their speed, like on iOS. */
+    private void updateWallpaperParallax(float pagePosition) {
+        if (wallpaperView == null) {
+            return;
+        }
+        if (settings.isLite()) {
+            wallpaperView.setTranslationX(0f);
+            return;
+        }
+        float delta = pagePosition - pager.currentPage();
+        float width = pager.pageWidth();
+        wallpaperView.setTranslationX(-delta * width * 0.08f);
     }
 
     public boolean handleBack() {
@@ -763,6 +874,14 @@ public class HomeScreen extends FrameLayout {
     }
 
     public void applyBackground() {
+        if (settings.isLite()) {
+            wallpaperRequest++;
+            wallpaperPath = null;
+            wallpaperBitmap = null;
+            wallpaperView.setImageDrawable(defaultBackground());
+            applyScrim();
+            return;
+        }
         int mode = settings.getBackgroundMode();
         if (mode == LauncherSettings.BG_IMAGE) {
             final String path = settings.getBackgroundPath();
@@ -803,7 +922,7 @@ public class HomeScreen extends FrameLayout {
         wallpaperRequest++;
         wallpaperPath = null;
         wallpaperBitmap = null;
-        Drawable background = mode == LauncherSettings.BG_SYSTEM ? loadSystemWallpaper() : null;
+        Drawable background = mode == LauncherSettings.BG_SYSTEM ? systemWallpaper() : null;
         if (background == null) {
             background = defaultBackground();
         }
@@ -826,13 +945,18 @@ public class HomeScreen extends FrameLayout {
         return Ui.verticalGradient(new int[]{0xFFE9E0FF, 0xFFF3F1FA, 0xFFF8F8FC});
     }
 
-    private Drawable loadSystemWallpaper() {
+    /** The system wallpaper is expensive to decode: keep the drawable until it is rebuilt. */
+    private Drawable systemWallpaper() {
+        if (systemWallpaperDrawable != null) {
+            return systemWallpaperDrawable;
+        }
         try {
             WallpaperManager manager = WallpaperManager.getInstance(activity);
-            return manager.getDrawable();
+            systemWallpaperDrawable = manager.getDrawable();
         } catch (Throwable t) {
-            return null;
+            systemWallpaperDrawable = null;
         }
+        return systemWallpaperDrawable;
     }
 
     /** Decodes the chosen wallpaper off the main thread, downsampled for the screen size. */
@@ -883,7 +1007,9 @@ public class HomeScreen extends FrameLayout {
             dateView.setText(text);
         }
         handler.removeCallbacks(clockTick);
-        handler.postDelayed(clockTick, CLOCK_INTERVAL_MS);
+        // Align the next tick with the next minute instead of waking up every 20 seconds.
+        long delay = CLOCK_INTERVAL_MS - (System.currentTimeMillis() % CLOCK_INTERVAL_MS);
+        handler.postDelayed(clockTick, Math.max(1000L, delay));
     }
 
     private void toast(String message) {

@@ -8,28 +8,35 @@ Launcher Android scritto in Java, con estetica Pixel e dettagli iOS. Package
 - **Home a pagine**: pagine scorrevoli con pagina centrale predefinita, drag and drop delle
   icone tra posizioni e pagine, cartelle create trascinando un'icona su un'altra e widget reali
   tramite `AppWidgetHost` (scelta, configurazione, ridimensionamento, spostamento, rimozione).
+- **Swipe in stile iOS**: la pagina segue il dito senza ritardo, conserva l'inerzia del gesto,
+  si aggancia alla pagina più vicina e rimbalza oltre la prima e l'ultima; dock fermo e icone
+  che si spostano con la pagina.
 - **Cassetto app**: ricerca in tempo reale, ordine alfabetico o di installazione, app
   nascondibili senza disinstallarle.
 - **Dock**: fino a cinque applicazioni scelte dalle impostazioni.
 - **Aspetto**: tema chiaro, scuro o automatico, colore accento, forma e dimensione delle icone,
   scala del testo, contrasto, sfondo predefinito / di sistema / da galleria, aspetti delle cartelle.
-- **Modalità**: Nexus e Nexus Lite nello stesso APK; Lite disattiva le animazioni e alleggerisce
-  rendering e sfondo.
+- **Modalità**: Nexus e Nexus Lite nello stesso APK. Lite usa una home essenziale con le
+  scorciatoie di telefono, messaggi, fotocamera e impostazioni, icone grandi, cassetto con campo
+  "Cerca app" e nessun fronzolo, mantenendo lo swipe fluido con inerzia e rimbalzo.
+- **Animazioni**: frequenza Automatico, Standard 60 Hz o Veloce 120 Hz, applicata alla finestra
+  solo se lo schermo supporta davvero quel modo, più effetto di cambio pagina configurabile.
 - **Dati locali**: backup e ripristino in JSON tramite il selettore file di Android, nessuna rete.
 
 ## Nexus UI — impostazioni
 
-Le impostazioni sono una dashboard a schede con ricerca e undici sezioni animate:
+Le impostazioni sono una dashboard a schede con ricerca e dodici sezioni animate:
 
 | Sezione | Contenuto |
 | --- | --- |
 | Personalizzazione | Tema, colore accento, forma e dimensione icone, etichette, sfondo, anteprima |
 | Schermata Home | Colonne, icone, etichette, pagine, dock, cartelle, ripristino layout |
 | Schermo e luminosità | Tema, contrasto, scala del testo, scala icone, scorciatoia alle impostazioni display |
-| Animazioni | Attiva/disattiva, velocità, effetto cambio pagina |
+| Animazioni | Attiva/disattiva, frequenza Automatico/60/120 Hz, effetto cambio pagina |
 | Applicazioni | Ordine del cassetto, comportamento della ricerca, visibilità delle app |
 | Widget | Aggiunta, elenco dei widget collocati, ridimensionamento, spostamento, rimozione |
 | Prestazioni | Scelta Nexus / Nexus Lite con differenze spiegate |
+| Confronto versioni | Tabella Funzione / Nexus Lite / Nexus divisa per categorie |
 | Privacy e sicurezza | Dati locali, permessi, privacy policy, impostazioni permessi di sistema |
 | Sistema | Backup locale, ripristini, launcher predefinito, versione e build |
 | Informazioni su Nexus | Versione, sviluppatore, GPL v3, licenze di terze parti, supporto, repository |
@@ -37,12 +44,24 @@ Le impostazioni sono una dashboard a schede con ricerca e undici sezioni animate
 
 Ogni controllo è collegato a `LauncherSettings` e tutte le modifiche sono persistenti.
 
+## Confronto versioni
+
+La sezione **Confronto versioni** mostra una tabella a tre colonne (Funzione, Nexus Lite,
+Nexus) divisa in otto categorie: home, personalizzazione, widget, animazioni, prestazioni,
+cassetto e ricerca, aspetto e display. I simboli sono `✓` disponibile, `◐` disponibile con
+limiti e `—` non disponibile. Le voci non implementate sono dichiarate come tali: la tabella
+viene aggiornata insieme al codice, non è un'immagine statica.
+
 ## Fluidità
 
-Le pagine della home vengono costruite solo quando entrano nella finestra visibile, il cassetto
-resta in cache dopo la prima apertura e filtra con debounce, gli intent di avvio delle app sono
-memorizzati e lo sfondo personale viene decodificato fuori dal thread principale. Nexus Lite
-disattiva animazioni e ombre e campiona lo sfondo a metà risoluzione.
+Lo scorrimento della home è gestito da un pager che segue il dito uno a uno, calcola la velocità
+con `VelocityTracker`, proietta la posizione al rilascio e si aggancia alla pagina più vicina con
+un'interpolazione decelerata; ai bordi applica una resistenza elastica. Le pagine vengono create
+solo quando entrano nella finestra visibile, le icone arrotondate sono memorizzate per dimensione,
+lo sfondo di sistema viene decodificato una sola volta e quello personale fuori dal thread
+principale, gli intent di avvio sono in cache e il cassetto filtra con debounce. L'orologio si
+aggiorna sul minuto invece che a intervalli fissi. Nexus Lite riduce ombre, sfondo e animazioni
+decorative ma mantiene lo swipe con inerzia.
 
 ## Compilare
 

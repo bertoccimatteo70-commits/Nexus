@@ -18,6 +18,7 @@ import android.graphics.Color;
 import android.os.Bundle;
 import android.provider.Settings;
 import android.util.DisplayMetrics;
+import android.view.Display;
 import android.view.View;
 import android.view.Window;
 import android.view.WindowManager;
@@ -38,6 +39,7 @@ public class MainActivity extends Activity {
 
         settings = new LauncherSettings(this);
         setupWindow();
+        applyPreferredRefreshRate();
 
         homeScreen = new HomeScreen(this, settings);
         setContentView(homeScreen);
@@ -58,8 +60,7 @@ public class MainActivity extends Activity {
         window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);
     }
 
-    public void applySystemBars() {
-        int flags = View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+    public void applySystemBars() {        int flags = View.SYSTEM_UI_FLAG_LAYOUT_STABLE
                 | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
                 | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION;
         if (!settings.isDark(this)) {
@@ -78,10 +79,44 @@ public class MainActivity extends Activity {
         }
     }
 
+    /**
+     * Asks the window for the refresh rate targeted by the animation setting. Automatic leaves
+     * the choice to Android; 60/120 pick the closest mode the panel really supports, so Nexus
+     * never claims a rate the display cannot run.
+     */
+    public void applyPreferredRefreshRate() {
+        if (settings == null) {
+            return;
+        }
+        try {
+            Window window = getWindow();
+            WindowManager.LayoutParams params = window.getAttributes();
+            float requested = settings.requestedRefreshRate();
+            if (requested <= 0f) {
+                params.preferredRefreshRate = 0f;
+                window.setAttributes(params);
+                return;
+            }
+            float best = 0f;
+            Display display = getWindowManager().getDefaultDisplay();
+            for (Display.Mode mode : display.getSupportedModes()) {
+                float rate = mode.getRefreshRate();
+                if (best == 0f || Math.abs(rate - requested) < Math.abs(best - requested)) {
+                    best = rate;
+                }
+            }
+            params.preferredRefreshRate = Math.abs(best - requested) <= 6f ? best : 0f;
+            window.setAttributes(params);
+        } catch (Throwable ignored) {
+            // the window keeps the system default refresh rate
+        }
+    }
+
     @Override
     protected void onResume() {
         super.onResume();
         applySystemBars();
+        applyPreferredRefreshRate();
         if (homeScreen != null) {
             homeScreen.onHostResume();
         }

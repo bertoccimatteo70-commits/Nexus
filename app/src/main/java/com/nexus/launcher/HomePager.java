@@ -1,12 +1,17 @@
 package com.nexus.launcher;
 
+import android.animation.Animator;
+import android.animation.AnimatorListenerAdapter;
 import android.animation.ValueAnimator;
 import android.appwidget.AppWidgetHostView;
 import android.content.Context;
 import android.os.Handler;
 import android.os.Looper;
 import android.view.Gravity;
+import android.view.MotionEvent;
+import android.view.VelocityTracker;
 import android.view.View;
+import android.view.ViewConfiguration;
 import android.view.ViewGroup;
 import android.view.animation.DecelerateInterpolator;
 import android.widget.FrameLayout;
@@ -17,21 +22,35 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Horizontally swipeable home: renders every page of the {@link HomeLayout}, keeps the page
- * indicator in sync and owns the drag and drop gesture between pages.
+ * Horizontally swipeable home, built like the iOS pager: the strip follows the finger one to
+ * one, keeps the inertia of the gesture, snaps to the closest page and rubber-bands past the
+ * first and last page. Pages are bound lazily so only what can be seen exists as views.
  */
 public class HomePager extends FrameLayout {
 
     public interface Listener {
         void onItemTap(HomeItem item, int pageIndex);
+
         void onWidgetMenu(HomeItem item, int pageIndex);
+
+        /** Nexus Lite asks for a menu instead of starting a drag. */
+        default void onItemLongPress(HomeItem item, int pageIndex) {
+        }
+
+        /** Fractional page position, used for the wallpaper parallax. */
+        default void onPageScrolled(float pagePosition) {
+        }
     }
 
     private static final long EDGE_DELAY_MS = 340L;
+    /** Extra travel allowed past the first and last page, as a fraction of the width. */
+    private static final float EDGE_RANGE = 0.6f;
+    /** Finger travel is reduced by this factor while past the edges. */
+    private static final float EDGE_RESISTANCE = 0.55f;
 
     private final MainActivity activity;
     private final LauncherSettings settings;
-    private final HomeLayout layout;
+    private HomeLayout layout;
     private final WidgetHost widgetHost;
     private final Map<String, AppInfo> appIndex;
 
@@ -39,12 +58,24 @@ public class HomePager extends FrameLayout {
     private final LinearLayout dots;
     private final List<HomePageView> pageViews = new ArrayList<>();
     private final Handler handler = new Handler(Looper.getMainLooper());
+    private final VelocityTracker velocityTracker;
+    private final int touchSlop;
+    private final int maxFlingVelocity;
 
     private Listener listener;
     private int currentPage;
     private int boundCenter = Integer.MIN_VALUE;
     private boolean firstLayout = true;
     private ValueAnimator scrollAnimator;
+
+    /** Content offset in pixels: 0 is the first page, it may exceed the edges while dragging. */
+    private float pagePosition;
+    private boolean trackingTouch;
+    private boolean pagingTouch;
+    private float downX;
+    private float downY;
+    private float lastTouchX;
+    private int lastActiveDot = -1;
 
     private boolean dragging;
     private HomeItem dragItem;
@@ -66,7 +97,7 @@ public class HomePager extends FrameLayout {
             }
             int next = currentPage + edgeDirection;
             if (next >= 0 && next < pageViews.size()) {
-                setCurrentPage(next, animationsOn());
+                setCurrentPage(next, true);
             }
             edgeDirection = 0;
         }
@@ -79,14 +110,32 @@ public class HomePager extends FrameLayout {
         }
     };
 
+    private final Runnable bindNeighbours = new Runnable() {
+        @Override
+        public void run() {
+            if (pageViews.isEmpty()) {
+                return;
+            }
+            int from = Math.max(0, currentPage - 1);
+            int to = Math.min(pageViews.size() - 1, currentPage + 1);
+            for (int i = from; i <= to; i++) {
+                HomePageView view = pageViews.get(i);
+                if (!view.isBound()) {
+                    view.bind();
+                }
+            }
+        }
+    };
+
     private final Runnable restoreScroll = new Runnable() {
         @Override
         public void run() {
+            if (pageViews.isEmpty()) {
+                return;
+            }
             bindAround(currentPage);
-            strip.scrollTo(currentPage * pageWidth(), 0);
-            applyPageAlpha();
-            updateDots();
-            applyWidgetSizes();
+            settleAt(currentPage);
+            post(bindNeighbours);
             int capacity = capacity();
             if (capacity > 0 && layout.rebalance(capacity)) {
                 post(new Runnable() {
@@ -107,6 +156,14 @@ public class HomePager extends FrameLayout {
         this.layout = layout;
         this.widgetHost = widgetHost;
         this.appIndex = appIndex;
+
+        ViewConfiguration configuration = ViewConfiguration.get(activity);
+        touchSlop = configuration.getScaledTouchSlop();
+        maxFlingVelocity = configuration.getScaledMaximumFlingVelocity();
+        velocityTracker = VelocityTracker.obtain();
+
+        setClipChildren(false);
+        setClipToPadding(false);
 
         strip = new Strip(activity);
         strip.setClipChildren(false);
@@ -133,6 +190,17 @@ public class HomePager extends FrameLayout {
 
     public HomeLayout getLayout() {
         return layout;
+    }
+
+    /** Swaps the persisted layout, used when Nexus and Nexus Lite are switched at runtime. */
+    public void setLayout(HomeLayout layout) {
+        if (layout == null || layout == this.layout) {
+            return;
+        }
+        this.layout = layout;
+        this.currentPage = layout.defaultPage();
+        this.firstLayout = true;
+        this.boundCenter = Integer.MIN_VALUE;
     }
 
     public WidgetHost getWidgetHost() {
@@ -185,7 +253,9 @@ public class HomePager extends FrameLayout {
         if (dragging) {
             finishDrag(dragSource);
         }
+        cancelScrollAnimation();
         strip.removeAllViews();
+        strip.setTranslationX(0f);
         pageViews.clear();
         boundCenter = Integer.MIN_VALUE;
         int count = layout.pageCount();
@@ -208,6 +278,7 @@ public class HomePager extends FrameLayout {
 
     private void buildDots() {
         dots.removeAllViews();
+        lastActiveDot = -1;
         if (pageViews.size() <= 1) {
             dots.setVisibility(GONE);
             return;
@@ -221,24 +292,47 @@ public class HomePager extends FrameLayout {
             dot.setLayoutParams(params);
             dots.addView(dot);
         }
-        updateDots();
+        updateDotsAt(currentPage);
+    }
+
+    private void restyleDots(int active) {
+        int accent = settings.accentColor(activity);
+        int idle = settings.isDark(activity) ? 0x66FFFFFF : 0x66000000;
+        for (int i = 0; i < dots.getChildCount(); i++) {
+            dots.getChildAt(i).setBackground(Ui.rounded(
+                    i == active ? accent : idle, Ui.dp(activity, 3)));
+        }
+    }
+
+    /** Dots grow while the pages move, so they track the gesture instead of jumping. */
+    private void updateDotsAt(float position) {
+        int count = dots.getChildCount();
+        if (count == 0) {
+            return;
+        }
+        for (int i = 0; i < count; i++) {
+            View dot = dots.getChildAt(i);
+            float proximity = Math.max(0f, 1f - Math.abs(i - position));
+            float scale = 1f + 0.5f * proximity;
+            if (Math.abs(dot.getScaleX() - scale) > 0.01f) {
+                dot.setScaleX(scale);
+                dot.setScaleY(scale);
+            }
+            float alpha = 0.55f + 0.45f * proximity;
+            if (Math.abs(dot.getAlpha() - alpha) > 0.01f) {
+                dot.setAlpha(alpha);
+            }
+        }
+        int active = Math.max(0, Math.min(count - 1, Math.round(position)));
+        if (active != lastActiveDot) {
+            lastActiveDot = active;
+            restyleDots(active);
+        }
     }
 
     private void updateDots() {
-        int count = dots.getChildCount();
-        for (int i = 0; i < count; i++) {
-            View dot = dots.getChildAt(i);
-            boolean active = i == currentPage;
-            dot.setBackground(Ui.rounded(
-                    active ? settings.accentColor(activity)
-                            : (settings.isDark(activity) ? 0x66FFFFFF : 0x66000000),
-                    Ui.dp(activity, 3)));
-            if (animationsOn()) {
-                dot.setScaleX(active ? 1.35f : 1f);
-                dot.setScaleY(active ? 1.35f : 1f);
-            }
-            dot.setAlpha(active ? 1f : 0.8f);
-        }
+        lastActiveDot = -1;
+        updateDotsAt(currentPage);
     }
 
     public int pageWidth() {
@@ -249,11 +343,17 @@ public class HomePager extends FrameLayout {
         return Math.max(1, width);
     }
 
+    private int maxScroll() {
+        return Math.max(0, (pageViews.size() - 1) * pageWidth());
+    }
+
     @Override
     protected void onSizeChanged(int w, int h, int oldw, int oldh) {
         super.onSizeChanged(w, h, oldw, oldh);
         if (w != oldw) {
-            strip.scrollTo(currentPage * pageWidth(), 0);
+            cancelScrollAnimation();
+            strip.requestLayout();
+            pagePosition = currentPage * pageWidth();
             post(restoreScroll);
         }
     }
@@ -264,30 +364,20 @@ public class HomePager extends FrameLayout {
             return;
         }
         page = Math.max(0, Math.min(page, pageViews.size() - 1));
-        int previous = currentPage;
-        currentPage = page;
+        cancelScrollAnimation();
         bindAround(page);
-        int targetX = page * pageWidth();
-        boolean smooth = animate && animationsOn() && Math.abs(page - previous) <= 1;
+        boolean smooth = animate && settings.animationsEnabled()
+                && settings.getPageEffect() != LauncherSettings.PAGE_NONE;
         if (smooth) {
-            animateScrollTo(targetX);
-            handler.removeCallbacks(trimRunnable);
-            handler.postDelayed(trimRunnable, 400L);
+            animateTo(page, 0f);
         } else {
-            cancelScrollAnimation();
-            handler.removeCallbacks(trimRunnable);
-            strip.scrollTo(targetX, 0);
-            trimAround(page);
+            settleAt(page);
         }
-        applyPageAlpha();
-        updateDots();
-        applyWidgetSizes();
     }
 
     /**
      * Binds the visible page and its immediate neighbours only. Pages outside that window stay
-     * as empty shells until they are needed, which keeps startup, page switches and swipes
-     * cheap even with many pages, apps and widgets.
+     * as empty shells until they are needed.
      */
     private void bindAround(int page) {
         if (pageViews.isEmpty()) {
@@ -322,57 +412,264 @@ public class HomePager extends FrameLayout {
         }
     }
 
-    public void scrollByPixels(float delta) {
-        cancelScrollAnimation();
-        int max = Math.max(0, (pageViews.size() - 1) * pageWidth());
-        int target = (int) (strip.getScrollX() + delta);
-        target = Math.max(0, Math.min(max, target));
-        strip.scrollTo(target, 0);
-        bindAround(Math.round((float) target / pageWidth()));
-        applyPageAlpha();
+    // ---------------------------------------------------------------- gestures
+
+    @Override
+    public boolean onInterceptTouchEvent(MotionEvent ev) {
+        if (pageViews.isEmpty() || dragging) {
+            return false;
+        }
+        switch (ev.getActionMasked()) {
+            case MotionEvent.ACTION_DOWN:
+                downX = ev.getX();
+                downY = ev.getY();
+                lastTouchX = downX;
+                trackingTouch = true;
+                pagingTouch = false;
+                cancelScrollAnimation();
+                velocityTracker.clear();
+                velocityTracker.addMovement(ev);
+                return false;
+            case MotionEvent.ACTION_MOVE:
+                if (!trackingTouch) {
+                    return false;
+                }
+                velocityTracker.addMovement(ev);
+                float dx = ev.getX() - downX;
+                float dy = ev.getY() - downY;
+                if (!pagingTouch && Math.abs(dx) > touchSlop && Math.abs(dx) > Math.abs(dy)) {
+                    startPaging(ev.getX());
+                }
+                return pagingTouch;
+            case MotionEvent.ACTION_UP:
+            case MotionEvent.ACTION_CANCEL:
+                trackingTouch = false;
+                return pagingTouch;
+            default:
+                return false;
+        }
     }
 
-    private void animateScrollTo(int targetX) {
+    private void startPaging(float x) {
+        pagingTouch = true;
+        lastTouchX = x;
+        for (HomePageView page : pageViews) {
+            page.cancelGesture();
+        }
         cancelScrollAnimation();
-        final int start = strip.getScrollX();
-        final int delta = targetX - start;
-        if (delta == 0) {
+    }
+
+    @Override
+    public boolean onTouchEvent(MotionEvent ev) {
+        if (pageViews.isEmpty()) {
+            return false;
+        }
+        switch (ev.getActionMasked()) {
+            case MotionEvent.ACTION_DOWN:
+                if (dragging) {
+                    return false;
+                }
+                downX = ev.getX();
+                downY = ev.getY();
+                lastTouchX = downX;
+                trackingTouch = true;
+                pagingTouch = false;
+                cancelScrollAnimation();
+                velocityTracker.clear();
+                velocityTracker.addMovement(ev);
+                return true;
+            case MotionEvent.ACTION_MOVE: {
+                if (dragging) {
+                    return false;
+                }
+                velocityTracker.addMovement(ev);
+                if (!pagingTouch) {
+                    float total = Math.abs(ev.getX() - downX);
+                    if (total > touchSlop) {
+                        startPaging(ev.getX());
+                    }
+                }
+                if (!pagingTouch) {
+                    return true;
+                }
+                float dx = ev.getX() - lastTouchX;
+                lastTouchX = ev.getX();
+                if (dx != 0f) {
+                    float next = pagePosition - dx;
+                    float width = pageWidth();
+                    float min = -width * EDGE_RANGE;
+                    float max = maxScroll() + width * EDGE_RANGE;
+                    next = Math.max(min, Math.min(max, next));
+                    renderPosition(next);
+                    bindAround(Math.round(next / width));
+                }
+                return true;
+            }
+            case MotionEvent.ACTION_UP: {
+                velocityTracker.addMovement(ev);
+                velocityTracker.computeCurrentVelocity(1000, maxFlingVelocity);
+                float contentVelocity = -velocityTracker.getXVelocity();
+                boolean wasPaging = pagingTouch;
+                resetTouch();
+                finishSwipe(wasPaging, contentVelocity);
+                return true;
+            }
+            case MotionEvent.ACTION_CANCEL:
+                boolean wasPaging = pagingTouch;
+                resetTouch();
+                finishSwipe(wasPaging, 0f);
+                return true;
+            default:
+                return super.onTouchEvent(ev);
+        }
+    }
+
+    private void resetTouch() {
+        trackingTouch = false;
+        pagingTouch = false;
+        velocityTracker.clear();
+    }
+
+    /**
+     * Renders the strip at an arbitrary offset. Inside the range the fractional part becomes a
+     * translation so movement is pixel smooth; outside it the offset is damped, which is what
+     * makes the edge feel elastic.
+     */
+    private void renderPosition(float positionPx) {
+        pagePosition = positionPx;
+        int width = pageWidth();
+        int max = maxScroll();
+        int clamped = Math.round(Math.max(0f, Math.min(max, positionPx)));
+        strip.scrollTo(clamped, 0);
+        float translation;
+        if (positionPx < 0f) {
+            translation = Math.max(-width * EDGE_RANGE * EDGE_RESISTANCE,
+                    positionPx * EDGE_RESISTANCE);
+        } else if (positionPx > max) {
+            translation = Math.min(width * EDGE_RANGE * EDGE_RESISTANCE,
+                    (positionPx - max) * EDGE_RESISTANCE);
+        } else {
+            translation = positionPx - clamped;
+        }
+        strip.setTranslationX(translation);
+        updateDotsAt(positionPx / width);
+        applyPageAlpha();
+        if (listener != null) {
+            listener.onPageScrolled(positionPx / width);
+        }
+    }
+
+    private void finishSwipe(boolean wasPaging, float contentVelocity) {
+        if (!wasPaging) {
             return;
         }
-        int duration = settings.animDuration(Math.min(280, 150 + Math.abs(delta) / 6));
+        int width = pageWidth();
+        int max = maxScroll();
+        int target;
+        if (pageViews.size() <= 1) {
+            target = 0;
+        } else if (pagePosition < 0f) {
+            target = 0;
+        } else if (pagePosition > max) {
+            target = pageViews.size() - 1;
+        } else {
+            float projected = pagePosition + contentVelocity * 0.28f;
+            target = Math.round(projected / width);
+            target = Math.max(0, Math.min(pageViews.size() - 1, target));
+        }
+        animateTo(target, contentVelocity);
+    }
+
+    /** Kept for callers that used to settle the strip after a custom gesture. */
+    public void settlePages() {
+        finishSwipe(true, 0f);
+    }
+
+    private void animateTo(int page, float velocity) {
+        if (pageViews.isEmpty()) {
+            return;
+        }
+        int target = Math.max(0, Math.min(page, pageViews.size() - 1));
+        int width = pageWidth();
+        final float start = pagePosition;
+        final float end = target * width;
+        bindAround(target);
+
+        float distance = Math.abs(end - start);
+        int duration = 0;
+        if (distance > 0.5f) {
+            int baseDuration;
+            float speed = Math.abs(velocity);
+            if (speed > 600f) {
+                baseDuration = Math.round(distance / speed * 1000f) + 90;
+            } else {
+                baseDuration = Math.round(180f + (distance / Math.max(1f, width)) * 220f);
+            }
+            baseDuration = Math.max(150, Math.min(430, baseDuration));
+            duration = settings.animDuration(baseDuration);
+        }
+
+        cancelScrollAnimation();
         if (duration <= 0) {
-            strip.scrollTo(targetX, 0);
-            applyPageAlpha();
+            settleAt(target);
             return;
         }
         scrollAnimator = ValueAnimator.ofFloat(0f, 1f);
         scrollAnimator.setDuration(duration);
-        scrollAnimator.setInterpolator(new DecelerateInterpolator());
+        scrollAnimator.setInterpolator(new DecelerateInterpolator(1.8f));
         scrollAnimator.addUpdateListener(new ValueAnimator.AnimatorUpdateListener() {
             @Override
             public void onAnimationUpdate(ValueAnimator animation) {
                 float fraction = (float) animation.getAnimatedValue();
-                strip.scrollTo(start + Math.round(delta * fraction), 0);
-                applyPageAlpha();
+                renderPosition(start + (end - start) * fraction);
+            }
+        });
+        scrollAnimator.addListener(new AnimatorListenerAdapter() {
+            @Override
+            public void onAnimationEnd(Animator animation) {
+                settleAt(target);
             }
         });
         scrollAnimator.start();
     }
 
-    private boolean animationsOn() {
-        return settings.animationsEnabled() && !settings.isLite();
+    private void settleAt(int page) {
+        if (pageViews.isEmpty()) {
+            return;
+        }
+        currentPage = Math.max(0, Math.min(page, pageViews.size() - 1));
+        pagePosition = currentPage * pageWidth();
+        strip.setTranslationX(0f);
+        strip.scrollTo(currentPage * pageWidth(), 0);
+        if (settings.getPageEffect() != LauncherSettings.PAGE_FADE) {
+            for (HomePageView view : pageViews) {
+                if (view.getAlpha() != 1f) {
+                    view.setAlpha(1f);
+                }
+            }
+        } else {
+            applyPageAlpha();
+        }
+        updateDots();
+        bindAround(currentPage);
+        trimAround(currentPage);
+        applyWidgetSizes();
     }
 
-    /** Cross-fades pages when the user picked theDissolvenza page transition. */
+    private boolean animationsOn() {
+        return settings.animationsEnabled();
+    }
+
+    /** Cross-fades pages when the user picked the Dissolvenza page transition. */
     private void applyPageAlpha() {
         if (pageViews.isEmpty() || settings.getPageEffect() != LauncherSettings.PAGE_FADE) {
             return;
         }
-        float width = pageWidth();
-        float offset = strip.getScrollX() / width;
-        int from = Math.max(0, (int) Math.floor(offset) - 1);
-        int to = Math.min(pageViews.size() - 1, (int) Math.ceil(offset) + 1);
-        for (int i = from; i <= to; i++) {
+        float offset = pagePosition / pageWidth();
+        for (int i = 0; i < pageViews.size(); i++) {
+            if (Math.abs(i - offset) > 1.5f) {
+                continue;
+            }
             float distance = Math.min(1f, Math.abs(i - offset));
             pageViews.get(i).setAlpha(1f - distance * 0.8f);
         }
@@ -383,12 +680,6 @@ public class HomePager extends FrameLayout {
             scrollAnimator.cancel();
             scrollAnimator = null;
         }
-    }
-
-    public void settlePages() {
-        int page = Math.round((float) strip.getScrollX() / pageWidth());
-        setCurrentPage(page, settings.getPageEffect() != LauncherSettings.PAGE_NONE);
-        trimAround(page);
     }
 
     // ------------------------------------------------------------------- drag
@@ -406,6 +697,7 @@ public class HomePager extends FrameLayout {
         if (item == null) {
             return;
         }
+        cancelScrollAnimation();
         dragging = true;
         dragItem = item;
         dragIndex = index;
@@ -448,10 +740,11 @@ public class HomePager extends FrameLayout {
         }
 
         int width = pageWidth();
+        float visibleScroll = strip.getScrollX() + strip.getTranslationX();
         int page = Math.max(0, Math.min(pageViews.size() - 1,
-                (int) ((strip.getScrollX() + x) / width)));
+                (int) ((visibleScroll + x) / width)));
         HomePageView pageView = pageViews.get(page);
-        float pageX = strip.getScrollX() + x - page * width;
+        float pageX = visibleScroll + x - page * width;
         int cell = pageView.cellIndexAt(pageX, y);
 
         targetPage = page;
@@ -557,6 +850,12 @@ public class HomePager extends FrameLayout {
         }
     }
 
+    void notifyItemLongPress(HomeItem item, int pageIndex) {
+        if (listener != null) {
+            listener.onItemLongPress(item, pageIndex);
+        }
+    }
+
     public void notifyWidgetMenu(HomeItem item, int pageIndex) {
         if (listener != null) {
             listener.onWidgetMenu(item, pageIndex);
@@ -566,6 +865,9 @@ public class HomePager extends FrameLayout {
     /** Reports the real size of every placed widget so providers can lay themselves out. */
     public void applyWidgetSizes() {
         for (HomePageView page : pageViews) {
+            if (!page.isBound()) {
+                continue;
+            }
             for (int i = 0; i < page.itemCount(); i++) {
                 HomeItem item = page.itemAt(i);
                 if (item == null || item.getSpanX() <= 0) {
@@ -584,6 +886,7 @@ public class HomePager extends FrameLayout {
     protected void onDetachedFromWindow() {
         handler.removeCallbacks(edgeSwitchRunnable);
         handler.removeCallbacks(trimRunnable);
+        handler.removeCallbacks(bindNeighbours);
         cancelScrollAnimation();
         super.onDetachedFromWindow();
     }

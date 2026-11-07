@@ -50,17 +50,19 @@ public class HomeGrid extends GridView {
         if (screenWidthDp <= 0) {
             screenWidthDp = 360;
         }
-        int columns = Math.max(3, settings.getColumns(context));
-        this.iconSizePx = settings.getIconSizePx(context);
-        this.labelTextSizeDp = screenWidthDp >= 400 ? 11 : 10;
+        int columns = Math.max(3, settings.isLite() ? 3 : settings.getColumns(context));
+        this.iconSizePx = settings.isLite()
+                ? Math.max(settings.getIconSizePx(context), Ui.dp(context, 60))
+                : settings.getIconSizePx(context);
+        this.labelTextSizeDp = settings.isLite() ? 13 : (screenWidthDp >= 400 ? 11 : 10);
         if (settings.isLite()) {
             setOverScrollMode(OVER_SCROLL_NEVER);
         }
 
         setNumColumns(columns);
         setStretchMode(GridView.STRETCH_COLUMN_WIDTH);
-        setHorizontalSpacing(Ui.dp(context, 2));
-        setVerticalSpacing(Ui.dp(context, 6));
+        setHorizontalSpacing(Ui.dp(context, settings.isLite() ? 4 : 2));
+        setVerticalSpacing(Ui.dp(context, settings.isLite() ? 12 : 6));
         setClipToPadding(false);
         setSelector(new ColorDrawable(Color.TRANSPARENT));
         setVerticalScrollBarEnabled(false);

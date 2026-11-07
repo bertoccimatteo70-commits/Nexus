@@ -48,32 +48,35 @@ public class SettingsHub extends FrameLayout {
     private static final int CAT_SYSTEM = 8;
     private static final int CAT_ABOUT = 9;
     private static final int CAT_DEVICE = 10;
+    private static final int CAT_COMPARE = 11;
 
     private static final String[] CATEGORY_TITLES = {
             "Personalizzazione", "Schermata Home", "Schermo e luminosità", "Animazioni",
-            "Applicazioni",            "Widget", "Prestazioni", "Privacy e sicurezza", "Sistema",
-            "Informazioni su Nexus", "Informazioni sul dispositivo"
+            "Applicazioni", "Widget", "Prestazioni", "Privacy e sicurezza", "Sistema",
+            "Informazioni su Nexus", "Informazioni sul dispositivo", "Confronto versioni"
     };
 
     private static final String[] CATEGORY_DESCRIPTIONS = {
             "Tema, colore accento, icone, sfondo e anteprima",
             "Griglia, etichette, pagine, dock e cartelle",
             "Contrasto, scala del testo e opzioni del display",
-            "Attiva o disattiva le animazioni e regolane la velocità",
+            "Transizioni, frequenza 60/120 Hz ed effetto cambio pagina",
             "Cassetto app, ricerca e visibilità delle applicazioni",
             "Aggiungi, ridimensiona e disponi i widget sulla home",
-            "Nexus e Nexus Lite: differenze e modalità attiva",
+            "Nexus Lite: leggero, essenziale e senza fronzoli",
             "Dove restano i dati e quali permessi usa il launcher",
             "Backup locale, ripristini, versione e build",
             "Licenza, crediti, supporto e repository",
-            "Hardware, memoria, batteria e dati di sistema"
+            "Hardware, memoria, batteria e dati di sistema",
+            "Scopri cosa cambia tra Nexus e Nexus Lite."
     };
 
     private static final int[] CATEGORY_ICONS = {
             R.drawable.ic_set_palette, R.drawable.ic_set_home, R.drawable.ic_set_display,
             R.drawable.ic_set_animation, R.drawable.ic_apps, R.drawable.ic_set_widget,
             R.drawable.ic_set_performance, R.drawable.ic_set_privacy,
-            R.drawable.ic_set_system, R.drawable.ic_set_info, R.drawable.ic_set_device
+            R.drawable.ic_set_system, R.drawable.ic_set_info, R.drawable.ic_set_device,
+            R.drawable.ic_set_compare
     };
 
     private static final String[] CATEGORY_KEYWORDS = {
@@ -88,7 +91,8 @@ public class SettingsHub extends FrameLayout {
             "backup ripristina reset versione build launcher predefinito",
             "informazioni licenza gpl crediti supporto github copyright",
             "dispositivo hardware batteria processore ram memoria schermo densita frequenza "
-                    + "aggiornamento temperatura modello produttore android build"
+                    + "aggiornamento temperatura modello produttore android build",
+            "confronto versioni differenze lite nexus tabella funzioni disponibili"
     };
 
     /** Deep links used by the search bar on the dashboard. */
@@ -107,7 +111,9 @@ public class SettingsHub extends FrameLayout {
             {"Licenza GPL v3", "Termini di utilizzo del codice", "9", "licenza gpl"},
             {"Privacy policy", "Come Nexus tratta i dati", "7", "privacy dati policy"},
             {"Informazioni sul dispositivo", "Hardware, batteria e build di Android", "10",
-                    "dispositivo hardware batteria processore ram memoria schermo"}
+                    "dispositivo hardware batteria processore ram memoria schermo"},
+            {"Confronto versioni", "Scopri cosa cambia tra Nexus e Nexus Lite", "11",
+                    "confronto lite differenze tabella funzioni"}
     };
 
     private static final String REPO_URL = "https://github.com/bertoccimatteo70-commits/Nexus";
@@ -239,6 +245,8 @@ public class SettingsHub extends FrameLayout {
                 return buildAbout();
             case CAT_DEVICE:
                 return buildDeviceInfo();
+            case CAT_COMPARE:
+                return buildCompare();
             default:
                 return createDashboard();
         }
@@ -328,7 +336,9 @@ public class SettingsHub extends FrameLayout {
         if (trimmed.isEmpty()) {
             sectionLabel(container, "Categorie");
             for (int i = 0; i < CATEGORY_TITLES.length; i++) {
-                container.addView(categoryCard(i));
+                if (availableInMode(i)) {
+                    container.addView(categoryCard(i));
+                }
             }
             TextView footer = text("Nexus " + BuildConfig.VERSION_NAME + " · "
                     + settings.launcherModeName(), 11.5f,
@@ -343,7 +353,7 @@ public class SettingsHub extends FrameLayout {
 
         int matches = 0;
         for (int i = 0; i < CATEGORY_TITLES.length; i++) {
-            if (categoryMatches(i, trimmed)) {
+            if (availableInMode(i) && categoryMatches(i, trimmed)) {
                 container.addView(categoryCard(i));
                 matches++;
             }
@@ -371,6 +381,11 @@ public class SettingsHub extends FrameLayout {
                     Ui.dp(activity, 8), Ui.dp(activity, 28));
             container.addView(empty);
         }
+    }
+
+    /** Nexus Lite hides the widget section: widgets are a Nexus only feature. */
+    private boolean availableInMode(int index) {
+        return !settings.isLite() || index != CAT_WIDGETS;
     }
 
     private boolean categoryMatches(int index, String query) {
@@ -688,19 +703,23 @@ public class SettingsHub extends FrameLayout {
                         sectionLabel(content, "Tema");
                         themeRows(content);
 
-                        sectionLabel(content, "Colore accento");
-                        content.addView(accentSwatches());
+                        if (!settings.isLite()) {
+                            sectionLabel(content, "Colore accento");
+                            content.addView(accentSwatches());
+                        }
 
                         sectionLabel(content, "Icone");
-                        choiceRow(content, "Forma delle icone", "Arrotondata, cerchio o squadrata",
-                                new String[]{"Arrotondata", "Cerchio", "Squadrata"},
-                                settings.getIconShape(), new SettingsSheet.OnSelect() {
-                                    @Override
-                                    public void onSelect(int index) {
-                                        settings.setIconShape(index);
-                                        applyChange();
-                                    }
-                                });
+                        if (!settings.isLite()) {
+                            choiceRow(content, "Forma delle icone", "Arrotondata, cerchio o squadrata",
+                                    new String[]{"Arrotondata", "Cerchio", "Squadrata"},
+                                    settings.getIconShape(), new SettingsSheet.OnSelect() {
+                                        @Override
+                                        public void onSelect(int index) {
+                                            settings.setIconShape(index);
+                                            applyChange();
+                                        }
+                                    });
+                        }
                         choiceRow(content, "Dimensione delle icone",
                                 "Si applica a home, dock e cassetto",
                                 new String[]{"Piccole (44 dp)", "Medie (52 dp)",
@@ -723,14 +742,16 @@ public class SettingsHub extends FrameLayout {
                                     }
                                 });
 
-                        sectionLabel(content, "Sfondo");
-                        row(content, "Sfondo della home", wallpaperLabel(), null,
-                                new Runnable() {
-                                    @Override
-                                    public void run() {
-                                        showWallpaperSheet();
-                                    }
-                                });
+                        if (!settings.isLite()) {
+                            sectionLabel(content, "Sfondo");
+                            row(content, "Sfondo della home", wallpaperLabel(), null,
+                                    new Runnable() {
+                                        @Override
+                                        public void run() {
+                                            showWallpaperSheet();
+                                        }
+                                    });
+                        }
 
                         resetRow(content, "Personalizzazione", new Runnable() {
                             @Override
@@ -943,16 +964,18 @@ public class SettingsHub extends FrameLayout {
                         bodyText(content, homeSummary());
 
                         sectionLabel(content, "Griglia e icone");
-                        choiceRow(content, "Colonne della griglia", "Quante app per riga",
-                                new String[]{"Automatico", "4 colonne", "5 colonne", "6 colonne"},
-                                columnIndex(), new SettingsSheet.OnSelect() {
-                                    @Override
-                                    public void onSelect(int index) {
-                                        int[] values = {0, 4, 5, 6};
-                                        settings.setColumns(values[index]);
-                                        applyChange();
-                                    }
-                                });
+                        if (!settings.isLite()) {
+                            choiceRow(content, "Colonne della griglia", "Quante app per riga",
+                                    new String[]{"Automatico", "4 colonne", "5 colonne", "6 colonne"},
+                                    columnIndex(), new SettingsSheet.OnSelect() {
+                                        @Override
+                                        public void onSelect(int index) {
+                                            int[] values = {0, 4, 5, 6};
+                                            settings.setColumns(values[index]);
+                                            applyChange();
+                                        }
+                                    });
+                        }
                         choiceRow(content, "Dimensione delle icone", null,
                                 new String[]{"Piccole (44 dp)", "Medie (52 dp)",
                                         "Grandi (60 dp)", "Molto grandi (68 dp)"},
@@ -974,33 +997,35 @@ public class SettingsHub extends FrameLayout {
                                     }
                                 });
 
-                        sectionLabel(content, "Pagine e dock");
-                        row(content, "Gestisci pagine", home.getLayout().pageCount()
-                                        + " pagine · pagina corrente "
-                                        + (home.getPager().currentPage() + 1),
-                                null, new Runnable() {
-                                    @Override
-                                    public void run() {
-                                        showPagesSheet();
-                                    }
-                                });
-                        row(content, "App nel dock", settings.getDockPackages().size()
-                                        + " di " + DockBar.MAX_ITEMS + " app selezionate",
-                                null, new Runnable() {
-                                    @Override
-                                    public void run() {
-                                        showDockSheet();
-                                    }
-                                });
-                        choiceRow(content, "Aspetto delle cartelle", "Sfondo dell'anteprima cartella",
-                                new String[]{"Vetro", "Solido", "Accento"},
-                                settings.getFolderStyle(), new SettingsSheet.OnSelect() {
-                                    @Override
-                                    public void onSelect(int index) {
-                                        settings.setFolderStyle(index);
-                                        applyChange();
-                                    }
-                                });
+                        if (!settings.isLite()) {
+                            sectionLabel(content, "Pagine e dock");
+                            row(content, "Gestisci pagine", home.getLayout().pageCount()
+                                            + " pagine · pagina corrente "
+                                            + (home.getPager().currentPage() + 1),
+                                    null, new Runnable() {
+                                        @Override
+                                        public void run() {
+                                            showPagesSheet();
+                                        }
+                                    });
+                            row(content, "App nel dock", settings.getDockPackages().size()
+                                            + " di " + DockBar.MAX_ITEMS + " app selezionate",
+                                    null, new Runnable() {
+                                        @Override
+                                        public void run() {
+                                            showDockSheet();
+                                        }
+                                    });
+                            choiceRow(content, "Aspetto delle cartelle", "Sfondo dell'anteprima cartella",
+                                    new String[]{"Vetro", "Solido", "Accento"},
+                                    settings.getFolderStyle(), new SettingsSheet.OnSelect() {
+                                        @Override
+                                        public void onSelect(int index) {
+                                            settings.setFolderStyle(index);
+                                            applyChange();
+                                        }
+                                    });
+                        }
 
                         sectionLabel(content, "Layout");
                         row(content, "Ripristina layout home",
@@ -1134,16 +1159,18 @@ public class SettingsHub extends FrameLayout {
 
                         sectionLabel(content, "Tema");
                         themeRows(content);
-                        choiceRow(content, "Contrasto dell'interfaccia",
-                                "Aumenta il distacco tra testi e superfici",
-                                new String[]{"Normale", "Alto"}, settings.getContrastMode(),
-                                new SettingsSheet.OnSelect() {
-                                    @Override
-                                    public void onSelect(int index) {
-                                        settings.setContrastMode(index);
-                                        applyChange();
-                                    }
-                                });
+                        if (!settings.isLite()) {
+                            choiceRow(content, "Contrasto dell'interfaccia",
+                                    "Aumenta il distacco tra testi e superfici",
+                                    new String[]{"Normale", "Alto"}, settings.getContrastMode(),
+                                    new SettingsSheet.OnSelect() {
+                                        @Override
+                                        public void onSelect(int index) {
+                                            settings.setContrastMode(index);
+                                            applyChange();
+                                        }
+                                    });
+                        }
 
                         sectionLabel(content, "Dimensioni");
                         choiceRow(content, "Scala del testo", "Dimensione delle etichette",
@@ -1207,27 +1234,29 @@ public class SettingsHub extends FrameLayout {
                                         applyChange();
                                     }
                                 });
-                        choiceRow(content, "Velocità delle animazioni",
-                                "Nexus Lite ignora questa impostazione e resta istantaneo",
-                                new String[]{"Lenta (0,5x)", "Normale (1x)", "Veloce (1,5x)"},
-                                speedIndex(), new SettingsSheet.OnSelect() {
+                        choiceRow(content, "Frequenza delle animazioni",
+                                "Automatico segue lo schermo; 60 e 120 Hz usano il modo più vicino",
+                                new String[]{"Automatico", "Standard (60 Hz)", "Veloce (120 Hz)"},
+                                settings.getAnimationMode(), new SettingsSheet.OnSelect() {
                                     @Override
                                     public void onSelect(int index) {
-                                        int[] values = {50, 100, 150};
-                                        settings.setAnimationSpeedPercent(values[index]);
+                                        settings.setAnimationMode(index);
                                         applyChange();
                                     }
                                 });
-                        choiceRow(content, "Effetto cambio pagina",
-                                "Transizione tra le pagine della home",
-                                new String[]{"Scorrimento", "Dissolvenza", "Nessuno"},
-                                settings.getPageEffect(), new SettingsSheet.OnSelect() {
-                                    @Override
-                                    public void onSelect(int index) {
-                                        settings.setPageEffect(index);
-                                        applyChange();
-                                    }
-                                });
+                        bodyText(content, refreshRateSummary());
+                        if (!settings.isLite()) {
+                            choiceRow(content, "Effetto cambio pagina",
+                                    "Transizione tra le pagine della home",
+                                    new String[]{"Scorrimento", "Dissolvenza", "Nessuno"},
+                                    settings.getPageEffect(), new SettingsSheet.OnSelect() {
+                                        @Override
+                                        public void onSelect(int index) {
+                                            settings.setPageEffect(index);
+                                            applyChange();
+                                        }
+                                    });
+                        }
                         bodyText(content, "Le superfici (cassetto, impostazioni, finestre) usano la "
                                 + "stessa durata: se disattivi le animazioni si aprono istantaneamente.");
 
@@ -1241,12 +1270,22 @@ public class SettingsHub extends FrameLayout {
                 });
     }
 
-    private int speedIndex() {
-        int speed = settings.getAnimationSpeedPercent();
-        if (speed < 80) {
-            return 0;
+    /** Honest report of what the panel can do and what the current mode requests. */
+    private String refreshRateSummary() {
+        int max = Math.round(settings.displayMaxRefreshRate());
+        int now = Math.round(settings.displayCurrentRefreshRate());
+        StringBuilder text = new StringBuilder("Pannello: ")
+                .append(max).append(" Hz massimi, adesso ").append(now).append(" Hz. ");
+        if (settings.getAnimationMode() == LauncherSettings.ANIM_120 && max < 100) {
+            text.append("Questo schermo non arriva a 120 Hz: Nexus usa il massimo disponibile ")
+                    .append("e non dichiara una frequenza che il pannello non ha.");
+        } else if (settings.getAnimationMode() == LauncherSettings.ANIM_AUTO) {
+            text.append("Automatico segue il modo scelto da Android per lo schermo.");
+        } else {
+            text.append("Nexus richiede alla finestra il modo più vicino a ")
+                    .append(Math.round(settings.effectiveAnimationHz())).append(" Hz.");
         }
-        return speed > 120 ? 2 : 1;
+        return text.toString();
     }
 
     // ----------------------------------------------------------- applications
@@ -1515,7 +1554,7 @@ public class SettingsHub extends FrameLayout {
                                     }
                                 });
                         row(content, "Nexus Lite",
-                                "Rendering essenziale, nessuna animazione, sfondo a metà risoluzione",
+                                "Una pagina essenziale, icone grandi, ricerca chiara e nessun fronzolo",
                                 settings.isLite() ? "Attiva" : null, new Runnable() {
                                     @Override
                                     public void run() {
@@ -1525,15 +1564,15 @@ public class SettingsHub extends FrameLayout {
                                 });
 
                         sectionLabel(content, "Differenze");
-                        bodyText(content, "Nexus: transizioni animate tra pagine e impostazioni, "
-                                + "scorrimento del cassetto, sfondo caricato alla risoluzione dello "
-                                + "schermo, ombre e indicatori animati.");
-                        bodyText(content, "Nexus Lite: nessuna animazione, sfondo campionato a metà "
-                                + "risoluzione in RGB_565, griglia senza ombre, cassetto immediato. "
-                                + "Tutte le funzioni restano disponibili: pagine, drag and drop, "
-                                + "cartelle, widget, ricerca, dock, backup e personalizzazione.");
-                        bodyText(content, "Puoi passare da una modalità all'altra in qualsiasi "
-                                + "momento: la scelta viene salvata e ripristinata al riavvio.");
+                        bodyText(content, "Nexus: più pagine, drag and drop, cartelle, widget, "
+                                + "sfondo personale, colore accento, ombre e impostazioni complete.");
+                        bodyText(content, "Nexus Lite: una home pulita con le scorciatoie che usi "
+                                + "di più, cassetto con campo \"Cerca app\", icone grandi, sfondo "
+                                + "predefinito a metà risoluzione e nessun widget. Lo swipe resta "
+                                + "fluido con inerzia ed effetto elastico.");
+                        bodyText(content, "Il confronto completo voce per voce è in \"Confronto "
+                                + "versioni\". Puoi cambiare modalità quando vuoi: ogni modalità "
+                                + "mantiene il proprio layout.");
                     }
                 });
     }
@@ -2084,6 +2123,219 @@ public class SettingsHub extends FrameLayout {
         params.topMargin = Ui.dp(activity, 4);
         hero.setLayoutParams(params);
         return hero;
+    }
+
+    // --------------------------------------------------------------- comparison
+
+    private View buildCompare() {
+        return buildPage("Confronto versioni",
+                "Scopri cosa cambia tra Nexus e Nexus Lite.", new Body() {
+                    @Override
+                    public void build(LinearLayout content) {
+                        content.addView(compareLegend());
+                        content.addView(compareHeader());
+
+                        compareSection(content, "Home screen", new String[][]{
+                                {"Home a più pagine", "Più pagine scorrevoli con pagina centrale", "—", "✓"},
+                                {"Swipe con inerzia", "La pagina segue il dito e continua con l'inerzia", "✓", "✓"},
+                                {"Effetto elastico", "Rimbalzo oltre la prima e l'ultima pagina", "✓", "✓"},
+                                {"Dock fisso", "Barra in basso sempre visibile durante lo swipe", "✓", "✓"},
+                                {"Drag and drop", "Sposta icone e scorciatoie tra le celle", "—", "✓"},
+                                {"Cartelle", "Raggruppa più app in una cartella", "—", "✓"},
+                                {"Scorciatoie modificabili", "Tieni premuto e scegli Rimuovi dalla home", "✓", "—"}
+                        });
+
+                        compareSection(content, "Personalizzazione", new String[][]{
+                                {"Tema", "Chiaro, scuro o automatico", "✓", "✓"},
+                                {"Colore accento", "Otto colori per selezioni e cursori", "—", "✓"},
+                                {"Forma delle icone", "Arrotondata, cerchio o squadrata", "—", "✓"},
+                                {"Dimensione delle icone", "Da 44 a 68 dp", "✓", "✓"},
+                                {"Etichette delle app", "Mostra o nascondi i nomi", "✓", "✓"},
+                                {"Sfondo personale", "Galleria o sfondo di sistema", "—", "✓"},
+                                {"Pacchetti di icone", "Non supportati in questa versione", "—", "—"}
+                        });
+
+                        compareSection(content, "Widget", new String[][]{
+                                {"Aggiungere widget", "Scegli un widget dal sistema", "—", "✓"},
+                                {"Widget sulla home", "Ridimensiona, sposta o rimuovi", "—", "✓"}
+                        });
+
+                        compareSection(content, "Animazioni", new String[][]{
+                                {"Transizioni tra pagine", "Scorrimento fluido della home", "✓", "✓"},
+                                {"Frequenza 60/120 Hz", "Automatico, 60 Hz o 120 Hz", "✓", "✓"},
+                                {"Animazioni decorative", "Cassetto e impostazioni con transizioni", "◐", "✓"},
+                                {"Effetto cambio pagina", "Scorrimento, dissolvenza o nessuno", "—", "✓"}
+                        });
+
+                        compareSection(content, "Prestazioni", new String[][]{
+                                {"Pagine caricate quando servono", "Binding automatico delle pagine visibili", "✓", "✓"},
+                                {"Cache delle icone", "Icone arrotondate riusate tra le viste", "✓", "✓"},
+                                {"Sfondo leggero", "Sfondo predefinito a metà risoluzione", "✓", "—"},
+                                {"Animazioni ridotte", "Solo transizioni essenziali", "✓", "—"},
+                                {"Rendering semplificato", "Nessuna ombra sulle etichette", "✓", "—"}
+                        });
+
+                        compareSection(content, "Cassetto e ricerca", new String[][]{
+                                {"Tutte le app installate", "Elenco completo dal cassetto", "✓", "✓"},
+                                {"Ricerca", "Campo \"Cerca app\" con filtro immediato", "✓", "✓"},
+                                {"Ordine alfabetico", "In Lite sempre attivo", "✓", "✓"},
+                                {"App nascoste", "Nascondi app senza disinstallarle", "—", "✓"},
+                                {"Aggiungi alla home", "Tieni premuta un'app nel cassetto", "✓", "✓"}
+                        });
+
+                        compareSection(content, "Aspetto", new String[][]{
+                                {"Ombre sulle etichette", "Testo leggibile su ogni sfondo", "—", "✓"},
+                                {"Effetti blur", "Non presenti in questa versione", "—", "—"},
+                                {"Anteprima dal vivo", "Card di anteprima in Personalizzazione", "—", "✓"},
+                                {"Tema automatico", "Segue l'impostazione di Android", "✓", "✓"}
+                        });
+
+                        compareSection(content, "Display", new String[][]{
+                                {"Contrasto alto", "Testi e superfici più distinti", "—", "✓"},
+                                {"Scala del testo", "90%, 100% o 115%", "✓", "✓"},
+                                {"Frequenza di aggiornamento", "Richiesta onesta del modo migliore disponibile", "✓", "✓"}
+                        });
+
+                        bodyText(content, "La tabella riflette l'implementazione attuale: "
+                                + "✓ disponibile, ◐ disponibile con limiti, — non disponibile. "
+                                + "Le voci non presenti in nessuna delle due modalità sono dichiarate "
+                                + "come tali invece di essere simulate.");
+                    }
+                });
+    }
+
+    private View compareLegend() {
+        LinearLayout card = new LinearLayout(activity);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(Ui.dp(activity, 14), Ui.dp(activity, 12),
+                Ui.dp(activity, 14), Ui.dp(activity, 12));
+        card.setBackground(Ui.rounded(settings.cardColor(activity), Ui.dp(activity, 18),
+                Ui.dp(activity, 1), settings.rowBackground(activity)));
+        card.addView(text("Legenda", 13f, settings.textColor(activity), true));
+        card.addView(legendLine("✓", "Disponibile"));
+        card.addView(legendLine("◐", "Disponibile con limitazioni"));
+        card.addView(legendLine("—", "Non disponibile"));
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        params.bottomMargin = Ui.dp(activity, 4);
+        card.setLayoutParams(params);
+        return card;
+    }
+
+    private View legendLine(String symbol, String label) {
+        LinearLayout line = new LinearLayout(activity);
+        line.setOrientation(LinearLayout.HORIZONTAL);
+        line.setGravity(Gravity.CENTER_VERTICAL);
+        line.setPadding(0, Ui.dp(activity, 3), 0, 0);
+        TextView glyph = text(symbol, 14f, compareSymbolColor(symbol), true);
+        glyph.setGravity(Gravity.CENTER);
+        line.addView(glyph, new LinearLayout.LayoutParams(
+                Ui.dp(activity, 26), LinearLayout.LayoutParams.WRAP_CONTENT));
+        line.addView(text(label, 12f, settings.secondaryTextColor(activity), false));
+        return line;
+    }
+
+    private void compareSection(LinearLayout content, String title, String[][] rows) {
+        sectionLabel(content, title);
+        LinearLayout card = new LinearLayout(activity);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setBackground(Ui.rounded(settings.cardColor(activity), Ui.dp(activity, 20),
+                Ui.dp(activity, 1), settings.rowBackground(activity)));
+        for (int i = 0; i < rows.length; i++) {
+            if (i > 0) {
+                View divider = new View(activity);
+                divider.setBackgroundColor(settings.rowBackground(activity));
+                card.addView(divider, new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT, Math.max(1, Ui.dp(activity, 0.7f))));
+            }
+            compareRow(card, rows[i][0], rows[i][1], rows[i][2], rows[i][3]);
+        }
+        content.addView(card);
+    }
+
+    /** Three column header aligned with the comparison rows. */
+    private View compareHeader() {
+        LinearLayout row = new LinearLayout(activity);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(Ui.dp(activity, 14), Ui.dp(activity, 10),
+                Ui.dp(activity, 8), Ui.dp(activity, 10));
+        row.setBackground(Ui.rounded(settings.searchBackground(activity), Ui.dp(activity, 16)));
+
+        row.addView(text("Funzione", 12f, settings.secondaryTextColor(activity), true),
+                new LinearLayout.LayoutParams(0,
+                        LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+
+        TextView lite = text("Nexus Lite", 10f, settings.textColor(activity), true);
+        lite.setGravity(Gravity.CENTER);
+        lite.setMaxLines(2);
+        row.addView(lite, new LinearLayout.LayoutParams(
+                Ui.dp(activity, 44), LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        TextView nexus = text("Nexus", 10f, settings.textColor(activity), true);
+        nexus.setGravity(Gravity.CENTER);
+        row.addView(nexus, new LinearLayout.LayoutParams(
+                Ui.dp(activity, 40), LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        params.bottomMargin = Ui.dp(activity, 10);
+        row.setLayoutParams(params);
+        return row;
+    }
+
+    private void compareRow(LinearLayout parent, String feature, String description,
+                            String lite, String nexus) {
+        LinearLayout row = new LinearLayout(activity);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(Ui.dp(activity, 14), Ui.dp(activity, 10),
+                Ui.dp(activity, 8), Ui.dp(activity, 10));
+
+        LinearLayout texts = new LinearLayout(activity);
+        texts.setOrientation(LinearLayout.VERTICAL);
+        texts.addView(text(feature, 13.5f, settings.textColor(activity), false));
+        TextView sub = text(description, 11f, settings.secondaryTextColor(activity), false);
+        sub.setLineSpacing(Ui.dp(activity, 1), 1f);
+        LinearLayout.LayoutParams subParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        subParams.topMargin = Ui.dp(activity, 2);
+        texts.addView(sub, subParams);
+        row.addView(texts, new LinearLayout.LayoutParams(0,
+                LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+
+        row.addView(compareCell(lite), new LinearLayout.LayoutParams(
+                Ui.dp(activity, 44), LinearLayout.LayoutParams.WRAP_CONTENT));
+        row.addView(compareCell(nexus), new LinearLayout.LayoutParams(
+                Ui.dp(activity, 40), LinearLayout.LayoutParams.WRAP_CONTENT));
+        parent.addView(row);
+    }
+
+    private View compareCell(String symbol) {
+        TextView cell = text(symbol, 17f, compareSymbolColor(symbol), true);
+        cell.setGravity(Gravity.CENTER);
+        cell.setContentDescription(symbolLabel(symbol));
+        return cell;
+    }
+
+    private String symbolLabel(String symbol) {
+        if ("✓".equals(symbol)) {
+            return "disponibile";
+        }
+        if ("◐".equals(symbol)) {
+            return "disponibile con limitazioni";
+        }
+        return "non disponibile";
+    }
+
+    private int compareSymbolColor(String symbol) {
+        if ("✓".equals(symbol)) {
+            return settings.accentColor(activity);
+        }
+        if ("◐".equals(symbol)) {
+            return 0xFFD08A00;
+        }
+        return settings.secondaryTextColor(activity);
     }
 
     private void showLicense() {

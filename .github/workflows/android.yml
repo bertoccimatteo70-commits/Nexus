@@ -153,18 +153,17 @@ jobs:
           NOTES=$(cat <<EOF
           $STATE
 
-          ## Novita di Nexus 1.3.1
-          - corrette le etichette delle app sulla home, che potevano risultare schiacciate subito dopo l'avvio
-          - nuova sezione **Informazioni sul dispositivo** in stile realme UI, con schede arrotondate e icone colorate
-          - dispositivo: nome commerciale, produttore, modello, nome dispositivo, Android, API, build e patch di sicurezza
-          - hardware: processore, architettura, core, RAM totale e disponibile, memoria interna, risoluzione, densita e frequenza di aggiornamento
-          - batteria: percentuale, stato di carica, alimentazione, temperatura e tecnologia
-          - dati Nexus: versione, version code, modalita attiva, tipo di build e repository
-          - pulsanti Aggiorna e Copia dettagli; le voci non disponibili sono dichiarate, mai simulate
-          - fluidita: le pagine della home vengono costruite solo quando servono, il cassetto e precompilato e la ricerca e filtrata con debounce
-          - avvio delle app piu rapido con intent in cache, sfondo decodificato fuori dal thread principale e aggiornamenti dei widget senza lavoro ripetuto
-          - Nexus Lite ancora piu leggero: nessuna ombra sulle etichette e rendering essenziale
-          - restano tutte le funzioni precedenti: tema, accento, icone, pagine, dock, cartelle, widget, backup e ripristino
+          ## Novita di Nexus 1.4.0
+          - nuova esperienza di swipe in stile iOS: la home segue il dito, mantiene l'inerzia e si aggancia alla pagina piu vicina
+          - effetto elastico oltre la prima e l'ultima pagina; dock sempre fisso e icone che si muovono con la pagina
+          - indicatore delle pagine animato durante il gesto e sfondo con parallasse leggero
+          - corretto il ridisegno delle pagine: icone sempre visibili, etichette mai tagliate, altezza riga calcolata dal testo reale
+          - prestazioni: binding delle pagine solo quando servono, cache delle icone, sfondo di sistema decodificato una volta, meno lavoro sul thread principale
+          - nuove impostazioni della frequenza delle animazioni: Automatico, Standard 60 Hz, Veloce 120 Hz, con richiesta del modo realmente supportato dallo schermo
+          - Nexus Lite ridisegnato: una home essenziale con telefono, messaggi, fotocamera e impostazioni, icone grandi, campo "Cerca app" nel cassetto e rimozione delle scorciatoie con pressione prolungata
+          - nuova sezione **Confronto versioni** con tabella a tre colonne (Funzione, Nexus Lite, Nexus) divisa per categorie
+          - il confronto riflette l'implementazione reale: le funzioni assenti sono indicate come non disponibili, mai simulate
+          - restano tema, accento, icone, pagine, dock, cartelle, widget, backup e ripristino in Nexus
 
           Installazione: scarica l'APK sul telefono, consenti l'installazione da origini sconosciute e aprilo. Richiede Android 10 (API 29) o successivo.
 

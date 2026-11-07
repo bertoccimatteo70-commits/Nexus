@@ -3,6 +3,9 @@ package com.nexus.launcher;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.content.res.Configuration;
+import android.hardware.display.DisplayManager;
+import android.os.Build;
+import android.view.Display;
 
 import org.json.JSONObject;
 
@@ -30,7 +33,7 @@ public class LauncherSettings {
     public static final int[] CATEGORY_TINTS = {
             0xFFE9DEFB, 0xFFDCE7FF, 0xFFFFE1EA, 0xFFD8F3E6,
             0xFFFFEBD2, 0xFFE3E1FF, 0xFFFFF4C9, 0xFFD9F1F7,
-            0xFFE8E8EF, 0xFFF0E6FB, 0xFFE4F0EA
+            0xFFE8E8EF, 0xFFF0E6FB, 0xFFE4F0EA, 0xFFE2EEFB
     };
 
     public static final int BG_DEFAULT = 0;
@@ -52,6 +55,11 @@ public class LauncherSettings {
     public static final int CONTRAST_NORMAL = 0;
     public static final int CONTRAST_HIGH = 1;
 
+    /** Animation timing modes: adapt to the panel, or pin a 60 Hz / 120 Hz target. */
+    public static final int ANIM_AUTO = 0;
+    public static final int ANIM_60 = 1;
+    public static final int ANIM_120 = 2;
+
     private static final String PREFS_NAME = "nexus_launcher_prefs";
     private static final String KEY_THEME_MODE = "theme_mode";
     private static final String KEY_LAUNCHER_MODE = "launcher_mode";
@@ -67,6 +75,8 @@ public class LauncherSettings {
     private static final String KEY_ICON_SHAPE = "icon_shape";
     private static final String KEY_LABEL_SCALE = "label_scale";
     private static final String KEY_ANIMATIONS = "animations_enabled";
+    private static final String KEY_ANIM_MODE = "animation_mode";
+    @Deprecated
     private static final String KEY_ANIM_SPEED = "animation_speed";
     private static final String KEY_PAGE_EFFECT = "page_effect";
     private static final String KEY_HIDDEN = "hidden_packages";
@@ -87,10 +97,11 @@ public class LauncherSettings {
     }
 
     private final SharedPreferences prefs;
+    private final Context context;
 
     public LauncherSettings(Context context) {
-        this.prefs = context.getApplicationContext()
-                .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+        this.context = context.getApplicationContext();
+        this.prefs = this.context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
     }
 
     // ---------------------------------------------------------------- theme
@@ -386,16 +397,102 @@ public class LauncherSettings {
         prefs.edit().putBoolean(KEY_ANIMATIONS, enabled).apply();
     }
 
-    public int getAnimationSpeedPercent() {
-        int value = prefs.getInt(KEY_ANIM_SPEED, 100);
-        if (value < 50 || value > 150) {
-            return 100;
-        }
-        return value;
+    public int getAnimationMode() {
+        int value = prefs.getInt(KEY_ANIM_MODE, ANIM_AUTO);
+        return value < ANIM_AUTO || value > ANIM_120 ? ANIM_AUTO : value;
     }
 
-    public void setAnimationSpeedPercent(int percent) {
-        prefs.edit().putInt(KEY_ANIM_SPEED, percent).apply();
+    public void setAnimationMode(int mode) {
+        prefs.edit().putInt(KEY_ANIM_MODE,
+                mode < ANIM_AUTO || mode > ANIM_120 ? ANIM_AUTO : mode).apply();
+    }
+
+    /** Highest refresh rate the physical panel offers, in Hz. */
+    public float displayMaxRefreshRate() {
+        try {
+            Display display = currentDisplay();
+            if (display == null) {
+                return 60f;
+            }
+            float max = display.getRefreshRate();
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                for (Display.Mode mode : display.getSupportedModes()) {
+                    max = Math.max(max, mode.getRefreshRate());
+                }
+            }
+            return max <= 1f ? 60f : max;
+        } catch (Throwable t) {
+            return 60f;
+        }
+    }
+
+    /** Refresh rate the panel is running at right now. */
+    public float displayCurrentRefreshRate() {
+        try {
+            Display display = currentDisplay();
+            float rate = display != null ? display.getRefreshRate() : 0f;
+            return rate <= 1f ? displayMaxRefreshRate() : rate;
+        } catch (Throwable t) {
+            return 60f;
+        }
+    }
+
+    /** Refresh rate requested by the chosen animation mode; 0 means "let Android adapt". */
+    public float requestedRefreshRate() {
+        switch (getAnimationMode()) {
+            case ANIM_60:
+                return 60f;
+            case ANIM_120:
+                return 120f;
+            default:
+                return 0f;
+        }
+    }
+
+    /**
+     * Effective animation timing target: the chosen rate when the panel supports it, otherwise
+     * the highest rate the display can actually run. Never pretends 120 Hz on 60 Hz hardware.
+     */
+    public float effectiveAnimationHz() {
+        float max = displayMaxRefreshRate();
+        float requested = requestedRefreshRate();
+        if (requested <= 0f) {
+            return max;
+        }
+        return Math.min(requested, max);
+    }
+
+    public boolean refreshRateSupported(int mode) {
+        if (mode == ANIM_120) {
+            return displayMaxRefreshRate() >= 100f;
+        }
+        return true;
+    }
+
+    public String animationModeName() {
+        switch (getAnimationMode()) {
+            case ANIM_60:
+                return "Standard · 60 Hz";
+            case ANIM_120:
+                return refreshRateSupported(ANIM_120)
+                        ? "Veloce · 120 Hz"
+                        : "Veloce · limitato a " + Math.round(displayMaxRefreshRate()) + " Hz";
+            default:
+                return "Automatico · " + Math.round(displayCurrentRefreshRate()) + " Hz";
+        }
+    }
+
+    private Display currentDisplay() {
+        DisplayManager manager = (DisplayManager) context.getSystemService(Context.DISPLAY_SERVICE);
+        if (manager == null) {
+            return null;
+        }
+        return manager.getDisplay(Display.DEFAULT_DISPLAY);
+    }
+
+    /** Decorative surfaces (drawer, settings, dialogs) skip their entrance in Nexus Lite. */
+    public boolean decorAnimationsEnabled() {
+        return animationsEnabled() && !isLite();
     }
 
     public int getPageEffect() {
@@ -412,10 +509,25 @@ public class LauncherSettings {
      * animations or Nexus Lite is active.
      */
     public int animDuration(int base) {
-        if (!animationsEnabled() || isLite()) {
+        if (!animationsEnabled()) {
             return 0;
         }
-        return Math.max(1, Math.round(base * (getAnimationSpeedPercent() / 100f)));
+        float scale;
+        switch (getAnimationMode()) {
+            case ANIM_60:
+                scale = 1f;
+                break;
+            case ANIM_120:
+                scale = 0.85f;
+                break;
+            default:
+                scale = displayMaxRefreshRate() >= 90f ? 0.94f : 1f;
+                break;
+        }
+        if (isLite()) {
+            scale *= 0.9f;
+        }
+        return Math.max(1, Math.round(base * scale));
     }
 
     // ---------------------------------------------------------- applications
@@ -492,6 +604,7 @@ public class LauncherSettings {
     public void resetAnimations() {
         prefs.edit()
                 .remove(KEY_ANIMATIONS)
+                .remove(KEY_ANIM_MODE)
                 .remove(KEY_ANIM_SPEED)
                 .remove(KEY_PAGE_EFFECT)
                 .apply();

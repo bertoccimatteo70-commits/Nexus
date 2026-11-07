@@ -103,13 +103,15 @@ public class DockBar extends LinearLayout {
 
             TextView label = new TextView(activity);
             label.setText(app.getLabel());
-            label.setTextSize(9f * settings.labelScale());
+            label.setTextSize((settings.isLite() ? 11f : 9f) * settings.labelScale());
             label.setGravity(Gravity.CENTER);
             label.setMaxLines(1);
             label.setSingleLine(true);
             label.setEllipsize(TextUtils.TruncateAt.END);
             label.setTextColor(settings.textColor(activity));
-            label.setShadowLayer(3f, 0f, 1f, 0x66000000);
+            if (!settings.isLite()) {
+                label.setShadowLayer(3f, 0f, 1f, 0x66000000);
+            }
             LinearLayout.LayoutParams labelParams = new LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
             labelParams.topMargin = Ui.dp(activity, 3);

@@ -56,7 +56,7 @@ public class AppDrawer extends FrameLayout {
         if (apps != null) {
             sorted.addAll(apps);
         }
-        if (settings.drawerAlphabetical()) {
+        if (settings.isLite() || settings.drawerAlphabetical()) {
             Collections.sort(sorted, AppInfo.ALPHABETICAL);
         }
 
@@ -99,6 +99,17 @@ public class AppDrawer extends FrameLayout {
         countView.setTextColor(settings.secondaryTextColor(activity));
         titles.addView(countView);
 
+        if (settings.isLite()) {
+            TextView hint = new TextView(activity);
+            hint.setText("Tocca un'app per aprirla · tieni premuto per aggiungerla alla home");
+            hint.setTextSize(12f);
+            hint.setTextColor(settings.secondaryTextColor(activity));
+            LinearLayout.LayoutParams hintParams = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+            hintParams.topMargin = Ui.dp(activity, 2);
+            titles.addView(hint, hintParams);
+        }
+
         header.addView(titles, new LinearLayout.LayoutParams(
                 0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
 
@@ -119,10 +130,24 @@ public class AppDrawer extends FrameLayout {
         panel.addView(header, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
 
+        if (settings.isLite()) {
+            TextView searchLabel = new TextView(activity);
+            searchLabel.setText("Cerca app");
+            searchLabel.setTextSize(13f);
+            searchLabel.setTextColor(settings.textColor(activity));
+            searchLabel.setTypeface(searchLabel.getTypeface(), android.graphics.Typeface.BOLD);
+            LinearLayout.LayoutParams labelParams = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+            labelParams.topMargin = Ui.dp(activity, 14);
+            labelParams.leftMargin = Ui.dp(activity, 4);
+            panel.addView(searchLabel, labelParams);
+        }
+
         search = new SearchBar(activity, settings);
         LinearLayout.LayoutParams searchParams = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, Ui.dp(activity, 46));
-        searchParams.topMargin = Ui.dp(activity, 12);
+                LinearLayout.LayoutParams.MATCH_PARENT, settings.isLite()
+                ? Ui.dp(activity, 52) : Ui.dp(activity, 46));
+        searchParams.topMargin = settings.isLite() ? Ui.dp(activity, 6) : Ui.dp(activity, 12);
         panel.addView(search, searchParams);
 
         grid = new HomeGrid(activity, settings);
@@ -188,7 +213,7 @@ public class AppDrawer extends FrameLayout {
     }
 
     public void animateIn() {
-        int duration = settings.animDuration(240);
+        int duration = settings.decorAnimationsEnabled() ? settings.animDuration(240) : 0;
         if (duration == 0) {
             setAlpha(1f);
             panel.setTranslationY(0f);
@@ -208,7 +233,7 @@ public class AppDrawer extends FrameLayout {
     }
 
     public void animateOut(final Runnable done) {
-        int duration = settings.animDuration(180);
+        int duration = settings.decorAnimationsEnabled() ? settings.animDuration(180) : 0;
         if (duration == 0) {
             if (done != null) {
                 done.run();

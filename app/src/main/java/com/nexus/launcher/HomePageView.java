@@ -22,8 +22,9 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * One home page. Children are positioned on a real cell grid so applications, folders and
- * widgets share the same layout. Handles taps, horizontal page swipes and long press drag.
+ * One home page. Children sit on a real cell grid so apps, folders and widgets share the same
+ * layout. Taps and long presses live here; horizontal swipes are handled by {@link HomePager}
+ * so the page follows the finger from the first pixel.
  */
 public class HomePageView extends ViewGroup {
 
@@ -37,6 +38,7 @@ public class HomePageView extends ViewGroup {
 
     private final List<HomeItem> items = new ArrayList<>();
     private final List<RectF> itemBounds = new ArrayList<>();
+    private final List<RectF> boundsPool = new ArrayList<>();
     private final List<Integer> itemStartCells = new ArrayList<>();
 
     private final Paint highlightPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -54,10 +56,9 @@ public class HomePageView extends ViewGroup {
 
     private float downX;
     private float downY;
-    private float lastX;
     private boolean moved;
     private int pressedIndex = -1;
-    private boolean intercepting;
+    private boolean longPressFired;
 
     private final Runnable longPressRunnable = new Runnable() {
         @Override
@@ -66,11 +67,15 @@ public class HomePageView extends ViewGroup {
                 return;
             }
             HomeItem item = items.get(pressedIndex);
+            longPressFired = true;
             if (item.isWidget()) {
                 pager.notifyWidgetMenu(item, pageIndex);
                 return;
             }
-            intercepting = true;
+            if (settings.isLite()) {
+                pager.notifyItemLongPress(item, pageIndex);
+                return;
+            }
             ViewGroup parent = (ViewGroup) getParent();
             if (parent != null) {
                 parent.requestDisallowInterceptTouchEvent(true);
@@ -98,6 +103,7 @@ public class HomePageView extends ViewGroup {
 
     /** Rebuilds every child from the persisted layout. */
     public void bind() {
+        cancelGesture();
         removeAllViews();
         items.clear();
         itemBounds.clear();
@@ -130,6 +136,7 @@ public class HomePageView extends ViewGroup {
         if (!bound) {
             return;
         }
+        cancelGesture();
         removeAllViews();
         items.clear();
         itemBounds.clear();
@@ -156,11 +163,27 @@ public class HomePageView extends ViewGroup {
         return buildAppCell(item);
     }
 
+    private float labelTextSize() {
+        return (settings.isLite() ? 12.5f : 11f) * settings.labelScale();
+    }
+
+    private void applyLabelStyle(TextView label) {
+        label.setTextSize(labelTextSize());
+        label.setGravity(Gravity.CENTER);
+        label.setSingleLine(true);
+        label.setEllipsize(TextUtils.TruncateAt.END);
+        label.setTextColor(settings.textColor(getContext()));
+        if (!settings.isLite()) {
+            label.setShadowLayer(3f, 0f, 1f, 0x66000000);
+        }
+    }
+
     private View buildAppCell(HomeItem item) {
         Context context = getContext();
         LinearLayout cell = new LinearLayout(context);
         cell.setOrientation(LinearLayout.VERTICAL);
         cell.setGravity(Gravity.CENTER_HORIZONTAL);
+        cell.setClipChildren(false);
         cell.setClickable(false);
         cell.setFocusable(false);
 
@@ -180,14 +203,7 @@ public class HomePageView extends ViewGroup {
             params.topMargin = Ui.dp(context, 4);
             label.setLayoutParams(params);
             label.setText(app != null ? app.getLabel() : item.getPackageName());
-            label.setTextSize((settings.isLite() ? 10f : 11f) * settings.labelScale());
-            label.setGravity(Gravity.CENTER);
-            label.setSingleLine(true);
-            label.setEllipsize(TextUtils.TruncateAt.END);
-            label.setTextColor(settings.textColor(context));
-            if (!settings.isLite()) {
-                label.setShadowLayer(3f, 0f, 1f, 0x66000000);
-            }
+            applyLabelStyle(label);
             cell.addView(label);
         }
         return cell;
@@ -198,6 +214,7 @@ public class HomePageView extends ViewGroup {
         LinearLayout cell = new LinearLayout(context);
         cell.setOrientation(LinearLayout.VERTICAL);
         cell.setGravity(Gravity.CENTER_HORIZONTAL);
+        cell.setClipChildren(false);
         cell.setClickable(false);
         cell.setFocusable(false);
 
@@ -259,14 +276,7 @@ public class HomePageView extends ViewGroup {
             params.topMargin = Ui.dp(context, 4);
             label.setLayoutParams(params);
             label.setText(item.getLabel());
-            label.setTextSize((settings.isLite() ? 10f : 11f) * settings.labelScale());
-            label.setGravity(Gravity.CENTER);
-            label.setSingleLine(true);
-            label.setEllipsize(TextUtils.TruncateAt.END);
-            label.setTextColor(settings.textColor(context));
-            if (!settings.isLite()) {
-                label.setShadowLayer(3f, 0f, 1f, 0x66000000);
-            }
+            applyLabelStyle(label);
             cell.addView(label);
         }
         return cell;
@@ -354,14 +364,26 @@ public class HomePageView extends ViewGroup {
         columns = Math.max(3, settings.getColumns(getContext()));
         iconPx = settings.getIconSizePx(getContext());
         cellW = Math.max(1, width / columns);
+
+        float scaledDensity = getResources().getDisplayMetrics().scaledDensity;
+        float labelSp = (settings.isLite() ? 12.5f : 11f) * settings.labelScale();
         int labelHeight = settings.showLabels()
-                ? Ui.dp(getContext(), 16 * settings.labelScale()) : 0;
-        cellH = iconPx + labelHeight + Ui.dp(getContext(), 8);
+                ? Math.round(labelSp * scaledDensity * 1.3f) : 0;
+        cellH = iconPx + labelHeight + Ui.dp(getContext(), 9);
         rows = Math.max(1, height / Math.max(1, cellH));
+
+        int neededRows = neededRows(columns);
+        if (neededRows > rows) {
+            rows = neededRows;
+            cellH = Math.max(1, height / rows);
+        }
 
         int gap = Ui.dp(getContext(), 4);
         itemBounds.clear();
         itemStartCells.clear();
+        while (boundsPool.size() < getChildCount()) {
+            boundsPool.add(new RectF());
+        }
 
         int row = 0;
         int col = 0;
@@ -376,19 +398,15 @@ public class HomePageView extends ViewGroup {
                 row++;
                 col = 0;
             }
-            if (row + spanY > rows) {
-                getChildAt(i).setVisibility(GONE);
-                itemStartCells.add(-1);
-                itemBounds.add(new RectF());
-                continue;
-            }
             getChildAt(i).setVisibility(VISIBLE);
             float left = col * cellW + gap / 2f;
             float top = row * cellH + gap / 2f;
             float right = (col + spanX) * cellW - gap / 2f;
             float bottom = (row + spanY) * cellH - gap / 2f;
             itemStartCells.add(row * columns + col);
-            itemBounds.add(new RectF(left, top, right, bottom));
+            RectF bounds = boundsPool.get(i);
+            bounds.set(left, top, right, bottom);
+            itemBounds.add(bounds);
 
             getChildAt(i).measure(
                     MeasureSpec.makeMeasureSpec(Math.round(right - left), MeasureSpec.EXACTLY),
@@ -401,6 +419,28 @@ public class HomePageView extends ViewGroup {
             }
         }
         setMeasuredDimension(width, height);
+    }
+
+    /** Cells required by the current items, so an overloaded page is never silently hidden. */
+    private int neededRows(int columns) {
+        int rowsNeeded = 1;
+        int row = 0;
+        int col = 0;
+        for (HomeItem item : items) {
+            int spanX = item.isWidget() ? Math.min(item.getSpanX(), columns) : 1;
+            int spanY = item.isWidget() ? Math.max(1, item.getSpanY()) : 1;
+            if (col + spanX > columns) {
+                row++;
+                col = 0;
+            }
+            rowsNeeded = Math.max(rowsNeeded, row + spanY);
+            col += spanX;
+            if (col >= columns) {
+                col = 0;
+                row++;
+            }
+        }
+        return rowsNeeded;
     }
 
     @Override
@@ -523,37 +563,6 @@ public class HomePageView extends ViewGroup {
     // ------------------------------------------------------------------ touch
 
     @Override
-    public boolean onInterceptTouchEvent(MotionEvent ev) {
-        switch (ev.getActionMasked()) {
-            case MotionEvent.ACTION_DOWN:
-                intercepting = false;
-                downX = ev.getX();
-                downY = ev.getY();
-                lastX = downX;
-                moved = false;
-                pressedIndex = itemIndexAt(downX, downY);
-                handler.removeCallbacks(longPressRunnable);
-                if (pressedIndex >= 0) {
-                    handler.postDelayed(longPressRunnable, LONG_PRESS_MS);
-                }
-                return false;
-            case MotionEvent.ACTION_MOVE:
-                if (intercepting) {
-                    return true;
-                }
-                if (Math.abs(ev.getX() - downX) > touchSlop
-                        || Math.abs(ev.getY() - downY) > touchSlop) {
-                    moved = true;
-                    handler.removeCallbacks(longPressRunnable);
-                }
-                return false;
-            default:
-                handler.removeCallbacks(longPressRunnable);
-                return intercepting;
-        }
-    }
-
-    @Override
     public boolean onTouchEvent(MotionEvent ev) {
         if (pager.isDragging()) {
             switch (ev.getActionMasked()) {
@@ -575,8 +584,8 @@ public class HomePageView extends ViewGroup {
             case MotionEvent.ACTION_DOWN:
                 downX = ev.getX();
                 downY = ev.getY();
-                lastX = downX;
                 moved = false;
+                longPressFired = false;
                 pressedIndex = itemIndexAt(downX, downY);
                 handler.removeCallbacks(longPressRunnable);
                 if (pressedIndex >= 0) {
@@ -584,30 +593,22 @@ public class HomePageView extends ViewGroup {
                 }
                 return true;
             case MotionEvent.ACTION_MOVE:
-                float dx = ev.getX() - lastX;
-                if (!moved && Math.abs(ev.getX() - downX) > touchSlop) {
+                if (!moved && (Math.abs(ev.getX() - downX) > touchSlop
+                        || Math.abs(ev.getY() - downY) > touchSlop)) {
                     moved = true;
                     handler.removeCallbacks(longPressRunnable);
                 }
-                if (moved) {
-                    pager.scrollByPixels(-dx);
-                }
-                lastX = ev.getX();
                 return true;
             case MotionEvent.ACTION_UP:
                 handler.removeCallbacks(longPressRunnable);
-                if (moved) {
-                    pager.settlePages();
-                } else if (pressedIndex >= 0 && pressedIndex < items.size()) {
+                if (!moved && !longPressFired && pressedIndex >= 0
+                        && pressedIndex < items.size()) {
                     pager.notifyItemTap(items.get(pressedIndex), pageIndex);
                 }
                 moved = false;
                 return true;
             case MotionEvent.ACTION_CANCEL:
                 handler.removeCallbacks(longPressRunnable);
-                if (moved) {
-                    pager.settlePages();
-                }
                 moved = false;
                 return true;
             default:
