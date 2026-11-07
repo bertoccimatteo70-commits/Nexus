@@ -34,7 +34,8 @@ public class AppInfo {
 
     private Drawable icon;
     private Drawable roundedIcon;
-    private int roundedIconSize;
+    private int roundedIconSize = -1;
+    private int roundedIconShape = -1;
 
     private AppInfo(PackageManager packageManager, ResolveInfo resolveInfo, String label) {
         this.packageManager = packageManager;
@@ -109,9 +110,14 @@ public class AppInfo {
     }
 
     public Drawable getRoundedIcon(int sizePx) {
-        if (roundedIcon == null || roundedIconSize != sizePx) {
-            roundedIcon = MainActivity.roundIcon(getIcon(), sizePx);
+        return getRoundedIcon(sizePx, LauncherSettings.SHAPE_ROUNDED);
+    }
+
+    public Drawable getRoundedIcon(int sizePx, int shape) {
+        if (roundedIcon == null || roundedIconSize != sizePx || roundedIconShape != shape) {
+            roundedIcon = MainActivity.roundIcon(getIcon(), sizePx, shape);
             roundedIconSize = sizePx;
+            roundedIconShape = shape;
         }
         return roundedIcon;
     }

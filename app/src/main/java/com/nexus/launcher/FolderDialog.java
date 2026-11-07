@@ -83,7 +83,7 @@ public final class FolderDialog {
 
         final TextView addRow = new TextView(activity);
         addRow.setText("Aggiungi app");
-        addRow.setTextColor(LauncherSettings.COLOR_ACCENT);
+        addRow.setTextColor(settings.accentColor(activity));
         addRow.setTextSize(14f);
         addRow.setGravity(Gravity.CENTER_VERTICAL);
         addRow.setPadding(Ui.dp(activity, 16), Ui.dp(activity, 14),

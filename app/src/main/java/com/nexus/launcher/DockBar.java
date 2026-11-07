@@ -98,12 +98,12 @@ public class DockBar extends LinearLayout {
             ImageView icon = new ImageView(activity);
             icon.setLayoutParams(new LinearLayout.LayoutParams(iconSize, iconSize));
             icon.setScaleType(ImageView.ScaleType.CENTER_CROP);
-            icon.setImageDrawable(app.getRoundedIcon(iconSize));
+            icon.setImageDrawable(app.getRoundedIcon(iconSize, settings.getIconShape()));
             item.addView(icon);
 
             TextView label = new TextView(activity);
             label.setText(app.getLabel());
-            label.setTextSize(9f);
+            label.setTextSize(9f * settings.labelScale());
             label.setGravity(Gravity.CENTER);
             label.setMaxLines(1);
             label.setSingleLine(true);

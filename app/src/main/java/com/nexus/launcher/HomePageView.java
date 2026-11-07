@@ -88,7 +88,7 @@ public class HomePageView extends ViewGroup {
         setClipChildren(false);
         setClipToPadding(false);
         highlightPaint.setStyle(Paint.Style.FILL);
-        highlightPaint.setColor(0x407C4DFF);
+        highlightPaint.setColor((settings.accentColor(getContext()) & 0x00FFFFFF) | 0x40000000);
     }
 
     public int getPageIndex() {
@@ -140,7 +140,7 @@ public class HomePageView extends ViewGroup {
         icon.setLayoutParams(new LinearLayout.LayoutParams(iconPx, iconPx));
         icon.setScaleType(ImageView.ScaleType.CENTER_CROP);
         if (app != null) {
-            icon.setImageDrawable(app.getRoundedIcon(iconPx));
+            icon.setImageDrawable(app.getRoundedIcon(iconPx, settings.getIconShape()));
         }
         cell.addView(icon);
 
@@ -151,7 +151,7 @@ public class HomePageView extends ViewGroup {
             params.topMargin = Ui.dp(context, 4);
             label.setLayoutParams(params);
             label.setText(app != null ? app.getLabel() : item.getPackageName());
-            label.setTextSize(settings.isLite() ? 10f : 11f);
+            label.setTextSize((settings.isLite() ? 10f : 11f) * settings.labelScale());
             label.setGravity(Gravity.CENTER);
             label.setSingleLine(true);
             label.setEllipsize(TextUtils.TruncateAt.END);
@@ -172,9 +172,22 @@ public class HomePageView extends ViewGroup {
 
         FrameLayout preview = new FrameLayout(context);
         preview.setLayoutParams(new LinearLayout.LayoutParams(iconPx, iconPx));
-        preview.setBackground(Ui.rounded(settings.isDark(context) ? 0x33FFFFFF : 0x55FFFFFF,
-                Ui.dp(context, 16), Ui.dp(context, 1),
-                settings.isDark(context) ? 0x33FFFFFF : 0x66000000));
+        int accent = settings.accentColor(context);
+        int folderColor;
+        int folderStroke;
+        int style = settings.getFolderStyle();
+        if (style == LauncherSettings.FOLDER_ACCENT) {
+            folderColor = (accent & 0x00FFFFFF) | 0x33000000;
+            folderStroke = (accent & 0x00FFFFFF) | 0x66000000;
+        } else if (style == LauncherSettings.FOLDER_SOLID) {
+            folderColor = settings.surfaceColor(context);
+            folderStroke = settings.rowBackground(context);
+        } else {
+            folderColor = settings.isDark(context) ? 0x33FFFFFF : 0x55FFFFFF;
+            folderStroke = settings.isDark(context) ? 0x33FFFFFF : 0x66000000;
+        }
+        preview.setBackground(Ui.rounded(folderColor,
+                Ui.dp(context, 16), Ui.dp(context, 1), folderStroke));
 
         LinearLayout mini = new LinearLayout(context);
         mini.setOrientation(LinearLayout.VERTICAL);
@@ -197,7 +210,7 @@ public class HomePageView extends ViewGroup {
                 if (index < children.size()) {
                     AppInfo app = pager.getApp(children.get(index));
                     if (app != null) {
-                        icon.setImageDrawable(app.getRoundedIcon(miniSize));
+                        icon.setImageDrawable(app.getRoundedIcon(miniSize, settings.getIconShape()));
                     }
                 }
                 row.addView(icon);
@@ -215,7 +228,7 @@ public class HomePageView extends ViewGroup {
             params.topMargin = Ui.dp(context, 4);
             label.setLayoutParams(params);
             label.setText(item.getLabel());
-            label.setTextSize(settings.isLite() ? 10f : 11f);
+            label.setTextSize((settings.isLite() ? 10f : 11f) * settings.labelScale());
             label.setGravity(Gravity.CENTER);
             label.setSingleLine(true);
             label.setEllipsize(TextUtils.TruncateAt.END);
@@ -271,11 +284,11 @@ public class HomePageView extends ViewGroup {
             icon.setColorFilter(settings.textColor(context));
         } else if (item.isFolder()) {
             icon.setImageResource(R.drawable.ic_apps);
-            icon.setColorFilter(LauncherSettings.COLOR_ACCENT);
+            icon.setColorFilter(settings.accentColor(context));
         } else {
             AppInfo app = pager.getApp(item.getPackageName());
             if (app != null) {
-                icon.setImageDrawable(app.getRoundedIcon(size));
+                icon.setImageDrawable(app.getRoundedIcon(size, settings.getIconShape()));
             }
         }
         ghost.addView(icon);
@@ -308,7 +321,8 @@ public class HomePageView extends ViewGroup {
         columns = Math.max(3, settings.getColumns(getContext()));
         iconPx = settings.getIconSizePx(getContext());
         cellW = Math.max(1, width / columns);
-        int labelHeight = settings.showLabels() ? Ui.dp(getContext(), 16) : 0;
+        int labelHeight = settings.showLabels()
+                ? Ui.dp(getContext(), 16 * settings.labelScale()) : 0;
         cellH = iconPx + labelHeight + Ui.dp(getContext(), 8);
         rows = Math.max(1, height / Math.max(1, cellH));
 
@@ -381,12 +395,13 @@ public class HomePageView extends ViewGroup {
         highlightRect.set(column * cellW + gap / 2f, row * cellH + gap / 2f,
                 (column + 1) * cellW - gap / 2f, (row + 1) * cellH - gap / 2f);
         float radius = Ui.dp(getContext(), 18);
+        int accent = settings.accentColor(getContext());
         highlightPaint.setStyle(Paint.Style.FILL);
-        highlightPaint.setColor(0x407C4DFF);
+        highlightPaint.setColor((accent & 0x00FFFFFF) | 0x40000000);
         canvas.drawRoundRect(highlightRect, radius, radius, highlightPaint);
         highlightPaint.setStyle(Paint.Style.STROKE);
         highlightPaint.setStrokeWidth(Ui.dp(getContext(), 2));
-        highlightPaint.setColor(0xCC7C4DFF);
+        highlightPaint.setColor((accent & 0x00FFFFFF) | 0xCC000000);
         canvas.drawRoundRect(highlightRect, radius, radius, highlightPaint);
     }
 

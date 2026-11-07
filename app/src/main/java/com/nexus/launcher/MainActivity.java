@@ -45,18 +45,7 @@ public class MainActivity extends Activity {
 
         if (!settings.isFirstLaunchDone()) {
             settings.setFirstLaunchDone(true);
-            SettingsDialogs.showModeDialog(this, settings, "Benvenuto in Nexus",
-                    "Nexus esiste in due versioni: Lite, leggera e pensata per i dispositivi meno potenti, "
-                            + "e Nexus completa. Puoi cambiare scelta in qualsiasi momento dalle impostazioni.",
-                    new SettingsDialogs.OnSettingsChanged() {
-                        @Override
-                        public void onSettingsChanged() {
-                            if (homeScreen != null) {
-                                homeScreen.onSettingsChanged();
-                            }
-                            promptDefaultLauncher();
-                        }
-                    });
+            showWelcome();
         }
     }
 
@@ -186,22 +175,49 @@ public class MainActivity extends Activity {
         }
     }
 
+    private void showWelcome() {
+        SettingsSheet.choice(this, settings, "Benvenuto in Nexus",
+                "Scegli come vuoi iniziare. Potrai cambiare modalità in qualsiasi momento dalle impostazioni.",
+                new String[]{"Nexus — esperienza completa", "Nexus Lite — leggero e immediato"}, 0,
+                new SettingsSheet.OnSelect() {
+                    @Override
+                    public void onSelect(int index) {
+                        settings.setLauncherMode(index == 0
+                                ? LauncherSettings.LauncherMode.FULL
+                                : LauncherSettings.LauncherMode.LITE);
+                        if (homeScreen != null) {
+                            homeScreen.onSettingsChanged();
+                        }
+                        promptDefaultLauncher();
+                    }
+                });
+    }
+
     public void promptDefaultLauncher() {
         if (isDefaultLauncher()) {
             return;
         }
-        SettingsDialogs.showDefaultLauncherDialog(this, new Runnable() {
-            @Override
-            public void run() {
-                requestDefaultLauncher();
-            }
-        });
+        SettingsSheet.confirm(this, settings, "Impostare Nexus come launcher predefinito?",
+                "Nexus deve essere il launcher predefinito per gestire home, cassetto e widget.",
+                "Imposta", new Runnable() {
+                    @Override
+                    public void run() {
+                        requestDefaultLauncher();
+                    }
+                });
     }
 
     /**
      * Crops an app icon into a rounded square, Pixel style.
      */
     public static Drawable roundIcon(Drawable source, int sizePx) {
+        return roundIcon(source, sizePx, LauncherSettings.SHAPE_ROUNDED);
+    }
+
+    /**
+     * Crops an app icon to the shape chosen in Personalizzazione.
+     */
+    public static Drawable roundIcon(Drawable source, int sizePx, int shape) {
         if (source == null || sizePx <= 0) {
             return source;
         }
@@ -209,9 +225,16 @@ public class MainActivity extends Activity {
             Bitmap bitmap = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888);
             Canvas canvas = new Canvas(bitmap);
             Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
-            RectF rect = new RectF(0f, 0f, sizePx, sizePx);
-            float radius = sizePx * 0.235f;
-            canvas.drawRoundRect(rect, radius, radius, paint);
+            if (shape == LauncherSettings.SHAPE_CIRCLE) {
+                float radius = sizePx / 2f;
+                canvas.drawCircle(radius, radius, radius, paint);
+            } else {
+                RectF rect = new RectF(0f, 0f, sizePx, sizePx);
+                float radius = shape == LauncherSettings.SHAPE_SQUARE
+                        ? sizePx * 0.115f
+                        : sizePx * 0.235f;
+                canvas.drawRoundRect(rect, radius, radius, paint);
+            }
             paint.setXfermode(new PorterDuffXfermode(PorterDuff.Mode.SRC_IN));
             source.setBounds(0, 0, sizePx, sizePx);
             source.draw(canvas);

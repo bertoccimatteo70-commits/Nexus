@@ -190,6 +190,42 @@ public class HomeLayout {
     }
 
     /**
+     * Removes every shortcut pointing at the given packages, including folder children.
+     * Used when the user hides applications: hidden apps disappear from the home while the
+     * package stays installed and can be shown again later.
+     */
+    public boolean removePackages(Set<String> packages) {
+        if (packages == null || packages.isEmpty()) {
+            return false;
+        }
+        boolean changed = false;
+        for (Page page : pages) {
+            for (int i = page.items.size() - 1; i >= 0; i--) {
+                HomeItem item = page.items.get(i);
+                if (item.isApp() && packages.contains(item.getPackageName())) {
+                    page.items.remove(i);
+                    changed = true;
+                } else if (item.isFolder()) {
+                    if (item.getChildren().removeAll(packages)) {
+                        changed = true;
+                    }
+                    if (item.getChildren().size() < 2) {
+                        if (item.getChildren().size() == 1) {
+                            page.items.set(i, HomeItem.app(item.getChildren().get(0)));
+                        } else {
+                            page.items.remove(i);
+                        }
+                    }
+                }
+            }
+        }
+        if (changed) {
+            save();
+        }
+        return changed;
+    }
+
+    /**
      * Moves items that no longer fit on a page to the following one, creating pages as needed.
      * Used after the grid size or the icon size changes.
      */

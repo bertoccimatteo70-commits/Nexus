@@ -146,7 +146,7 @@ public class HomeGrid extends GridView {
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         labelParams.topMargin = Ui.dp(context, 4);
         label.setLayoutParams(labelParams);
-        label.setTextSize(labelTextSizeDp);
+        label.setTextSize(labelTextSizeDp * settings.labelScale());
         label.setGravity(Gravity.CENTER);
         label.setMaxLines(1);
         label.setSingleLine(true);
@@ -185,7 +185,7 @@ public class HomeGrid extends GridView {
         labelParams.topMargin = Ui.dp(context, 4);
         label.setLayoutParams(labelParams);
         label.setText("Tutte le app");
-        label.setTextSize(labelTextSizeDp);
+        label.setTextSize(labelTextSizeDp * settings.labelScale());
         label.setGravity(Gravity.CENTER);
         label.setMaxLines(1);
         label.setSingleLine(true);
@@ -238,7 +238,7 @@ public class HomeGrid extends GridView {
             AppInfo app = apps.get(position);
             holder.label.setText(app.getLabel());
             holder.label.setTextColor(settings.textColor(getContext()));
-            holder.icon.setImageDrawable(app.getRoundedIcon(iconSizePx));
+            holder.icon.setImageDrawable(app.getRoundedIcon(iconSizePx, settings.getIconShape()));
             return view;
         }
     }

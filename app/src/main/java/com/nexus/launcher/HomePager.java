@@ -65,7 +65,7 @@ public class HomePager extends FrameLayout {
             }
             int next = currentPage + edgeDirection;
             if (next >= 0 && next < pageViews.size()) {
-                setCurrentPage(next, !settings.isLite());
+                setCurrentPage(next, animationsOn());
             }
             edgeDirection = 0;
         }
@@ -75,6 +75,7 @@ public class HomePager extends FrameLayout {
         @Override
         public void run() {
             strip.scrollTo(currentPage * pageWidth(), 0);
+            applyPageAlpha();
             updateDots();
             applyWidgetSizes();
             int capacity = capacity();
@@ -219,9 +220,10 @@ public class HomePager extends FrameLayout {
             View dot = dots.getChildAt(i);
             boolean active = i == currentPage;
             dot.setBackground(Ui.rounded(
-                    active ? 0xFFFFFFFF : (settings.isDark(activity) ? 0x66FFFFFF : 0x66000000),
+                    active ? settings.accentColor(activity)
+                            : (settings.isDark(activity) ? 0x66FFFFFF : 0x66000000),
                     Ui.dp(activity, 3)));
-            if (!settings.isLite()) {
+            if (animationsOn()) {
                 dot.setScaleX(active ? 1.35f : 1f);
                 dot.setScaleY(active ? 1.35f : 1f);
             }
@@ -254,12 +256,13 @@ public class HomePager extends FrameLayout {
         page = Math.max(0, Math.min(page, pageViews.size() - 1));
         currentPage = page;
         int targetX = page * pageWidth();
-        if (animate && !settings.isLite()) {
+        if (animate && animationsOn()) {
             animateScrollTo(targetX);
         } else {
             cancelScrollAnimation();
             strip.scrollTo(targetX, 0);
         }
+        applyPageAlpha();
         updateDots();
         applyWidgetSizes();
     }
@@ -269,6 +272,7 @@ public class HomePager extends FrameLayout {
         int max = Math.max(0, (pageViews.size() - 1) * pageWidth());
         int target = (int) (strip.getScrollX() + delta);
         strip.scrollTo(Math.max(0, Math.min(max, target)), 0);
+        applyPageAlpha();
     }
 
     private void animateScrollTo(int targetX) {
@@ -278,17 +282,49 @@ public class HomePager extends FrameLayout {
         if (delta == 0) {
             return;
         }
+        int duration = settings.animDuration(Math.min(280, 150 + Math.abs(delta) / 6));
+        if (duration <= 0) {
+            strip.scrollTo(targetX, 0);
+            applyPageAlpha();
+            return;
+        }
         scrollAnimator = ValueAnimator.ofFloat(0f, 1f);
-        scrollAnimator.setDuration(Math.min(280, 150 + Math.abs(delta) / 6));
+        scrollAnimator.setDuration(duration);
         scrollAnimator.setInterpolator(new DecelerateInterpolator());
         scrollAnimator.addUpdateListener(new ValueAnimator.AnimatorUpdateListener() {
             @Override
             public void onAnimationUpdate(ValueAnimator animation) {
                 float fraction = (float) animation.getAnimatedValue();
                 strip.scrollTo(start + Math.round(delta * fraction), 0);
+                applyPageAlpha();
             }
         });
         scrollAnimator.start();
+    }
+
+    private boolean animationsOn() {
+        return settings.animationsEnabled() && !settings.isLite();
+    }
+
+    /** Cross-fades pages when the user picked theDissolvenza page transition. */
+    private void applyPageAlpha() {
+        if (pageViews.isEmpty()) {
+            return;
+        }
+        if (settings.getPageEffect() != LauncherSettings.PAGE_FADE) {
+            for (HomePageView page : pageViews) {
+                if (page.getAlpha() != 1f) {
+                    page.setAlpha(1f);
+                }
+            }
+            return;
+        }
+        float width = pageWidth();
+        float offset = strip.getScrollX() / width;
+        for (int i = 0; i < pageViews.size(); i++) {
+            float distance = Math.min(1f, Math.abs(i - offset));
+            pageViews.get(i).setAlpha(1f - distance * 0.8f);
+        }
     }
 
     private void cancelScrollAnimation() {
@@ -300,7 +336,7 @@ public class HomePager extends FrameLayout {
 
     public void settlePages() {
         int page = Math.round((float) strip.getScrollX() / pageWidth());
-        setCurrentPage(page, true);
+        setCurrentPage(page, settings.getPageEffect() != LauncherSettings.PAGE_NONE);
     }
 
     // ------------------------------------------------------------------- drag

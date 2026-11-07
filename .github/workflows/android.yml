@@ -33,14 +33,12 @@ jobs:
           export ANDROID_SDK_ROOT="$ANDROID_HOME"
           echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
           echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> "$GITHUB_ENV"
-          ls "$ANDROID_HOME"
           if [ -x "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" ]; then
             yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null 2>&1 || true
             "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
               "platforms;android-35" "build-tools;35.0.0" > /dev/null 2>&1 || true
-          else
-            echo "sdkmanager non presente, uso i componenti gia installati"
           fi
+          ls "$ANDROID_HOME/build-tools" | tail -3
 
       - name: Set up Gradle 8.9
         uses: gradle/actions/setup-gradle@v4
@@ -68,7 +66,7 @@ jobs:
             echo "ready=true" >> "$GITHUB_OUTPUT"
             echo "Chiave di firma caricata: build release firmata"
           else
-            echo "::warning::Segreti di firma assenti (ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD): compilo solo debug e non pubblico release."
+            echo "::warning::Segreti di firma assenti: compilo debug e pubblico una release chiaramente etichettata DEBUG."
             echo "ready=false" >> "$GITHUB_OUTPUT"
           fi
 
@@ -103,8 +101,10 @@ jobs:
           fi
           test -f "$SRC"
           cp "$SRC" "dist/$NAME"
+          (cd dist && sha256sum "$NAME" > "$NAME.sha256")
           echo "name=$NAME" >> "$GITHUB_OUTPUT"
           echo "APK raccolto: dist/$NAME"
+          cat "dist/$NAME.sha256"
 
       - name: Verify release signature
         if: steps.signing.outputs.ready == 'true'
@@ -124,11 +124,11 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: NEXUS-apk
-          path: dist/*.apk
+          path: dist/*
           if-no-files-found: error
 
-      - name: Publish signed release on GitHub
-        if: steps.signing.outputs.ready == 'true' && github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+      - name: Publish release on GitHub
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -137,39 +137,59 @@ jobs:
           VERSION="${{ steps.version.outputs.version }}"
           APK="${{ steps.apk.outputs.name }}"
           ASSET="dist/${APK}"
+          SUM="${ASSET}.sha256"
+          SIGNED="${{ steps.signing.outputs.ready }}"
 
-          NOTES=$(cat <<'EOF'
-          Build **release firmata** di Nexus, il launcher Android in Java con estetica Pixel e dettagli iOS.
+          if [ "$SIGNED" = "true" ]; then
+            TITLE="Nexus $VERSION"
+            STATE="Build **release firmata con la chiave di release** del repository."
+            SIGNING="Firma: APK release firmato; gli aggiornamenti futuri firmati con la stessa chiave si installano sopra questa versione."
+          else
+            TITLE="Nexus $VERSION (DEBUG build)"
+            STATE="**ATTENZIONE: questa e una build DEBUG, non firmata con la chiave di release.** Non usarla come base per aggiornamenti in produzione: serve solo per provare la nuova interfaccia."
+            SIGNING="Firma: debug keystore generato dal runner CI. I segreti ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS e ANDROID_KEY_PASSWORD non sono configurati."
+          fi
 
-          Cosa contiene:
-          - pagine home multiple scorrevoli, con pagina centrale predefinita
-          - drag and drop delle icone tra posizioni e pagine, con salvataggio automatico
-          - cartelle: creazione trascinando un'icona su un'altra, rinomina, aggiunta e rimozione app
-          - widget reali tramite AppWidgetHost: scelta, configurazione, ridimensionamento e rimozione
-          - cassetto app in ordine alfabetico con ricerca in tempo reale
-          - griglia e icone personalizzabili, temi chiaro/scuro, sfondo, dock
-          - modalita Nexus e Nexus Lite nello stesso APK
-          - persistenza di pagine, posizioni, cartelle, widget, dock e preferenze
+          NOTES=$(cat <<EOF
+          $STATE
 
-          Installazione: scarica l'APK sul telefono, consenti l'installazione da origini sconosciute
-          per il browser o il file manager e aprilo. Richiede Android 10 (API 29) o successivo.
-          Dopo l'installazione puoi impostare Nexus come launcher predefinito dalle impostazioni.
+          ## Nexus UI — nuove impostazioni
+          - dashboard con titolo grande, ricerca istantanea e card arrotondate colorate
+          - dieci sezioni dedicate: Personalizzazione, Schermata Home, Schermo e luminosita, Animazioni, Applicazioni, Widget, Prestazioni, Privacy e sicurezza, Sistema, Informazioni su Nexus
+          - tema chiaro, scuro e automatico con colore accento selezionabile
+          - forma e dimensione delle icone, scala del testo, contrasto dell'interfaccia
+          - gestione pagine, dock, cartelle e layout direttamente dalle impostazioni
+          - animazioni globali con velocita regolabile ed effetto dissolvenza tra le pagine
+          - visibilita delle app, ordine del cassetto e comportamento della ricerca
+          - widget: aggiunta, ridimensionamento, spostamento tra pagine e rimozione
+          - Nexus e Nexus Lite nello stesso APK, con differenze spiegate nell'app
+          - backup e ripristino locale in JSON tramite il selettore file di Android
+          - privacy policy, permessi spiegati, licenza GPL v3 e crediti di terze parti
+          - ogni impostazione e persistente e applicata immediatamente
 
-          Firma: chiave di release custodita nei segreti del repository; l'APK e aggiornabile
-          nel tempo senza disinstallare le versioni precedenti firmate con la stessa chiave.
+          Installazione: scarica l'APK sul telefono, consenti l'installazione da origini sconosciute e aprilo. Richiede Android 10 (API 29) o successivo.
+
+          $SIGNING
+
+          Checksum SHA-256 incluso nell'asset \`${APK}.sha256\`.
           EOF
           )
 
           if gh release view "$TAG" > /dev/null 2>&1; then
-            echo "Release $TAG esistente: aggiorno l'APK firmato"
-            gh release upload "$TAG" "$ASSET" --clobber
-            gh release delete-asset "$TAG" "Nexus-${VERSION}-debug.apk" --yes || true
+            echo "Release $TAG esistente: aggiorno gli asset"
+            gh release upload "$TAG" "$ASSET" "$SUM" --clobber
           else
-            echo "Creo la release $TAG"
-            gh release create "$TAG" "$ASSET" \
-              --title "Nexus $VERSION" \
+            gh release create "$TAG" "$ASSET" "$SUM" \
+              --title "$TITLE" \
               --notes "$NOTES" \
               --latest
           fi
 
-          echo "APK firmato pubblicato: https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/${APK}"
+          for stale in "Nexus-${VERSION}.apk" "Nexus-${VERSION}-debug.apk"; do
+            if [ "$stale" != "$APK" ]; then
+              gh release delete-asset "$TAG" "$stale" --yes > /dev/null 2>&1 || true
+            fi
+          done
+
+          echo "Release: https://github.com/${GITHUB_REPOSITORY}/releases/tag/${TAG}"
+          echo "APK: https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/${APK}"

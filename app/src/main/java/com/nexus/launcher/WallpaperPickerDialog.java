@@ -1,12 +1,9 @@
 package com.nexus.launcher;
 
 import android.app.Activity;
-import android.content.DialogInterface;
 import android.content.Intent;
 import android.net.Uri;
 import android.widget.Toast;
-
-import androidx.appcompat.app.AlertDialog;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -32,34 +29,22 @@ public class WallpaperPickerDialog {
         this.onApplied = onApplied;
     }
 
-    public void show() {
-        String[] options = {
-                "Scegli dalla galleria",
-                "Usa lo sfondo di sistema",
-                "Sfondo predefinito Nexus"
-        };
+    /** Opens the gallery picker; the chosen image is copied into the app storage. */
+    public void pickFromGallery() {
+        pickImage();
+    }
 
-        new AlertDialog.Builder(activity)
-                .setTitle("Sfondo")
-                .setItems(options, new DialogInterface.OnClickListener() {
-                    @Override
-                    public void onClick(DialogInterface dialog, int which) {
-                        if (which == 0) {
-                            pickImage();
-                        } else if (which == 1) {
-                            settings.setBackgroundMode(LauncherSettings.BG_SYSTEM);
-                            settings.setBackgroundPath(null);
-                            notifyChanged();
-                        } else {
-                            settings.setBackgroundMode(LauncherSettings.BG_DEFAULT);
-                            settings.setBackgroundPath(null);
-                            deleteCustomWallpaper();
-                            notifyChanged();
-                        }
-                    }
-                })
-                .setNegativeButton("Annulla", null)
-                .show();
+    public void applySystem() {
+        settings.setBackgroundMode(LauncherSettings.BG_SYSTEM);
+        settings.setBackgroundPath(null);
+        notifyChanged();
+    }
+
+    public void applyDefault() {
+        settings.setBackgroundMode(LauncherSettings.BG_DEFAULT);
+        settings.setBackgroundPath(null);
+        deleteCustomWallpaper();
+        notifyChanged();
     }
 
     @SuppressWarnings("deprecation")

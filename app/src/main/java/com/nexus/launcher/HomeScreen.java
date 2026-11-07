@@ -1,7 +1,6 @@
 package com.nexus.launcher;
 
 import android.app.WallpaperManager;
-import android.content.DialogInterface;
 import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
@@ -18,8 +17,6 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
-import androidx.appcompat.app.AlertDialog;
-
 import java.io.File;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
@@ -33,7 +30,7 @@ import java.util.Set;
 
 /**
  * Home screen: wallpaper, clock, search, swipeable pages with drag and drop, widgets,
- * dock and the application drawer.
+ * dock, the application drawer and the Nexus UI settings overlay.
  */
 public class HomeScreen extends FrameLayout {
 
@@ -64,6 +61,7 @@ public class HomeScreen extends FrameLayout {
 
     private AppDrawer drawer;
     private boolean drawerOpen;
+    private SettingsHub settingsHub;
 
     private final Runnable clockTick = new Runnable() {
         @Override
@@ -106,6 +104,9 @@ public class HomeScreen extends FrameLayout {
                     return;
                 }
                 pager.rebuild();
+                if (settingsHub != null) {
+                    settingsHub.refreshPage();
+                }
                 toast(label + " aggiunto alla home");
             }
         });
@@ -150,11 +151,15 @@ public class HomeScreen extends FrameLayout {
         searchBar.setOnQueryChangeListener(new SearchBar.OnQueryChangeListener() {
             @Override
             public void onQueryChanged(String query) {
-                if (query != null && !query.trim().isEmpty() && !drawerOpen) {
-                    String text = query.trim();
-                    searchBar.setQuery("");
-                    openDrawer(text);
+                if (query == null || query.trim().isEmpty() || drawerOpen) {
+                    return;
                 }
+                if (!settings.searchOpensDrawer()) {
+                    return;
+                }
+                String text = query.trim();
+                searchBar.setQuery("");
+                openDrawer(text);
             }
         });
 
@@ -260,13 +265,17 @@ public class HomeScreen extends FrameLayout {
 
     private void reloadApps() {
         allApps.clear();
-        allApps.addAll(AppInfo.load(activity));
         appIndex.clear();
-        Set<String> installed = new HashSet<>();
-        for (AppInfo app : allApps) {
+        Set<String> hidden = new HashSet<>(settings.getHiddenPackages());
+        for (AppInfo app : AppInfo.load(activity)) {
+            if (hidden.contains(app.getPackageName())) {
+                continue;
+            }
+            allApps.add(app);
             appIndex.put(app.getPackageName(), app);
-            installed.add(app.getPackageName());
         }
+        Set<String> installed = new HashSet<>(appIndex.keySet());
+        layout.removePackages(hidden);
         int capacity = defaultCapacity();
         layout.ensureDefaults(allApps, capacity);
         layout.prune(installed);
@@ -312,10 +321,6 @@ public class HomeScreen extends FrameLayout {
         settings.setDockPackages(chosen);
     }
 
-    private void refreshHome() {
-        pager.rebuild();
-    }
-
     /** Conservative page capacity used when creating the very first layout. */
     private int defaultCapacity() {
         return Math.max(4, Math.min(16, settings.getColumns(activity) * 3));
@@ -327,7 +332,7 @@ public class HomeScreen extends FrameLayout {
         FolderDialog.show(activity, settings, layout, folder, appIndex, new Runnable() {
             @Override
             public void run() {
-                refreshHome();
+                pager.rebuild();
             }
         });
     }
@@ -335,46 +340,38 @@ public class HomeScreen extends FrameLayout {
     // ---------------------------------------------------------------- widgets
 
     private void showWidgetMenu(final HomeItem item) {
-        new AlertDialog.Builder(activity)
-                .setTitle(item.getLabel())
-                .setItems(new CharSequence[]{"Ridimensiona", "Rimuovi"}, new DialogInterface.OnClickListener() {
+        SettingsSheet.actions(activity, settings, item.getLabel(), "Widget sulla home",
+                new String[]{"Ridimensiona", "Rimuovi"}, new SettingsSheet.OnSelect() {
                     @Override
-                    public void onClick(DialogInterface dialog, int which) {
-                        if (which == 0) {
+                    public void onSelect(int index) {
+                        if (index == 0) {
                             showWidgetResize(item);
                         } else {
                             removeWidget(item);
                         }
                     }
-                })
-                .show();
+                });
     }
 
     private void showWidgetResize(final HomeItem item) {
         final int columns = Math.max(3, settings.getColumns(activity));
         final List<String> labels = new ArrayList<>();
-        final List<int[]> sizes = new ArrayList<>();
         for (int spanY = 1; spanY <= 3; spanY++) {
             for (int spanX = 1; spanX <= columns; spanX++) {
-                labels.add(spanX + " x " + spanY);
-                sizes.add(new int[]{spanX, spanY});
+                labels.add(spanX + " × " + spanY);
             }
         }
-        new AlertDialog.Builder(activity)
-                .setTitle("Dimensione widget")
-                .setSingleChoiceItems(labels.toArray(new CharSequence[0]), -1,
-                        new DialogInterface.OnClickListener() {
-                            @Override
-                            public void onClick(DialogInterface dialog, int which) {
-                                item.setSpanX(sizes.get(which)[0]);
-                                item.setSpanY(sizes.get(which)[1]);
-                                layout.save();
-                                pager.rebuild();
-                                dialog.dismiss();
-                            }
-                        })
-                .setNegativeButton("Annulla", null)
-                .show();
+        SettingsSheet.choice(activity, settings, "Dimensione del widget",
+                "Celle occupate sulla griglia della home", labels.toArray(new String[0]),
+                (Math.max(1, item.getSpanY()) - 1) * columns + (Math.max(1, item.getSpanX()) - 1),
+                new SettingsSheet.OnSelect() {
+                    @Override
+                    public void onSelect(int index) {
+                        int spanY = index / columns + 1;
+                        int spanX = index % columns + 1;
+                        resizeWidget(item, spanX, spanY);
+                    }
+                });
     }
 
     private void removeWidget(HomeItem item) {
@@ -436,17 +433,13 @@ public class HomeScreen extends FrameLayout {
             toast(app.getLabel() + " è già sulla home");
             return;
         }
-        new AlertDialog.Builder(activity)
-                .setTitle(app.getLabel())
-                .setMessage("Aggiungere questa app alla home?")
-                .setNegativeButton("Annulla", null)
-                .setPositiveButton("Aggiungi", new DialogInterface.OnClickListener() {
+        SettingsSheet.confirm(activity, settings, app.getLabel(),
+                "Aggiungere questa app alla home?", "Aggiungi", new Runnable() {
                     @Override
-                    public void onClick(DialogInterface dialog, int which) {
+                    public void run() {
                         addAppToHome(app);
                     }
-                })
-                .show();
+                });
     }
 
     private void addAppToHome(AppInfo app) {
@@ -462,91 +455,177 @@ public class HomeScreen extends FrameLayout {
                 return;
             }
         }
-        toast("Nessuno spazio libero: crea una nuova pagina dalle impostazioni");
+        toast("Nessuno spazio libero: aggiungi una pagina dalle impostazioni");
     }
 
     // --------------------------------------------------------------- settings
 
     public void showSettings() {
         searchBar.hideKeyboard();
-        SettingsPanel.show(activity, settings, allApps, new SettingsPanel.Actions() {
-            @Override
-            public void onWallpaper() {
-                wallpaperPicker.show();
-            }
-
-            @Override
-            public void onAddWidget() {
-                widgetHost.pickWidget();
-            }
-
-            @Override
-            public void onResetHome() {
-                confirmResetHome();
-            }
-
-            @Override
-            public void onPages() {
-                showPagesDialog();
-            }
-        }, new SettingsDialogs.OnSettingsChanged() {
-            @Override
-            public void onSettingsChanged() {
-                HomeScreen.this.onSettingsChanged();
-            }
-        });
+        if (settingsHub != null) {
+            return;
+        }
+        settingsHub = new SettingsHub(activity, this);
+        boolean animate = settings.animationsEnabled() && !settings.isLite();
+        if (animate) {
+            settingsHub.setAlpha(0f);
+        }
+        addView(settingsHub, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+        if (animate) {
+            settingsHub.animate().alpha(1f).setDuration(settings.animDuration(200)).start();
+        }
     }
 
-    private void confirmResetHome() {
-        new AlertDialog.Builder(activity)
-                .setTitle("Ripristinare la home?")
-                .setMessage("Verranno ripristinate le pagine iniziali. Le app installate non vengono toccate.")
-                .setNegativeButton("Annulla", null)
-                .setPositiveButton("Ripristina", new DialogInterface.OnClickListener() {
-                    @Override
-                    public void onClick(DialogInterface dialog, int which) {
-                        layout.reset();
-                        layout.ensureDefaults(allApps, defaultCapacity());
-                        layout.prune(appIndex.keySet());
-                        pager.setCurrentPage(layout.defaultPage(), false);
-                        pager.rebuild();
-                    }
-                })
-                .show();
-    }
-
-    private void showPagesDialog() {
-        String[] items = {"Aggiungi pagina a destra", "Aggiungi pagina a sinistra",
-                "Rimuovi pagina corrente"};
-        new AlertDialog.Builder(activity)
-                .setTitle("Pagine")
-                .setItems(items, new DialogInterface.OnClickListener() {
-                    @Override
-                    public void onClick(DialogInterface dialog, int which) {
-                        if (which == 0) {
-                            int index = layout.addPage(false);
-                            pager.setCurrentPage(index, true);
-                            pager.rebuild();
-                        } else if (which == 1) {
-                            int index = layout.addPage(true);
-                            pager.setCurrentPage(index, true);
-                            pager.rebuild();
-                        } else {
-                            int current = pager.currentPage();
-                            HomeLayout.Page page = layout.page(current);
-                            if (layout.pageCount() <= 1) {
-                                toast("Serve almeno una pagina");
-                            } else if (page != null && page.items.isEmpty()) {
-                                layout.removePage(current);
-                                pager.setCurrentPage(Math.max(0, current - 1), false);
-                                pager.rebuild();
-                            } else {
-                                toast("La pagina contiene app: svuotala prima");
+    public void closeSettings() {
+        if (settingsHub == null) {
+            return;
+        }
+        final SettingsHub target = settingsHub;
+        settingsHub = null;
+        searchBar.hideKeyboard();
+        boolean animate = settings.animationsEnabled() && !settings.isLite();
+        if (animate) {
+            target.animate().alpha(0f).setDuration(settings.animDuration(160))
+                    .withEndAction(new Runnable() {
+                        @Override
+                        public void run() {
+                            if (target.getParent() == HomeScreen.this) {
+                                removeView(target);
                             }
                         }
-                    }
-                })
-                .show();
+                    }).start();
+        } else if (target.getParent() == HomeScreen.this) {
+            removeView(target);
+        }
+    }
+
+    public LauncherSettings getSettings() {
+        return settings;
+    }
+
+    public HomeLayout getLayout() {
+        return layout;
+    }
+
+    public HomePager getPager() {
+        return pager;
+    }
+
+    public WidgetHost getWidgetHost() {
+        return widgetHost;
+    }
+
+    public List<AppInfo> getApps() {
+        return allApps;
+    }
+
+    // ------------------------------------------------------- settings actions
+
+    public void openWallpaperFromGallery() {
+        wallpaperPicker.pickFromGallery();
+    }
+
+    public void useSystemWallpaper() {
+        wallpaperPicker.applySystem();
+    }
+
+    public void useDefaultWallpaper() {
+        wallpaperPicker.applyDefault();
+    }
+
+    public void requestAddWidget() {
+        widgetHost.pickWidget();
+    }
+
+    public void resizeWidget(HomeItem item, int spanX, int spanY) {
+        if (item == null || !item.isWidget()) {
+            return;
+        }
+        item.setSpanX(Math.max(1, spanX));
+        item.setSpanY(Math.max(1, spanY));
+        layout.save();
+        pager.rebuild();
+    }
+
+    public void moveWidgetToPage(HomeItem item, int targetPage) {
+        if (item == null || targetPage < 0 || targetPage >= layout.pageCount()) {
+            return;
+        }
+        for (int p = 0; p < layout.pageCount(); p++) {
+            HomeLayout.Page page = layout.page(p);
+            if (page == null) {
+                continue;
+            }
+            int index = page.items.indexOf(item);
+            if (index < 0) {
+                continue;
+            }
+            if (p != targetPage) {
+                HomeLayout.Page target = layout.page(targetPage);
+                if (target != null && layout.move(p, index, targetPage, target.items.size())) {
+                    pager.rebuild();
+                    pager.setCurrentPage(targetPage, true);
+                    toast("Widget spostato nella pagina " + (targetPage + 1));
+                }
+            }
+            return;
+        }
+    }
+
+    public void removeAllWidgets() {
+        List<HomeItem> widgets = new ArrayList<>();
+        for (int p = 0; p < layout.pageCount(); p++) {
+            HomeLayout.Page page = layout.page(p);
+            if (page == null) {
+                continue;
+            }
+            for (HomeItem item : page.items) {
+                if (item.isWidget()) {
+                    widgets.add(item);
+                }
+            }
+        }
+        for (HomeItem widget : widgets) {
+            widgetHost.deleteWidget(widget.getAppWidgetId());
+            layout.removeItem(widget);
+        }
+        pager.rebuild();
+        toast(widgets.isEmpty() ? "Nessun widget presente" : "Widget rimossi");
+    }
+
+    public void resetHomeLayout() {
+        layout.reset();
+        layout.ensureDefaults(allApps, defaultCapacity());
+        layout.prune(appIndex.keySet());
+        pager.setCurrentPage(layout.defaultPage(), false);
+        pager.rebuild();
+        toast("Layout della home ripristinato");
+    }
+
+    public void resetEverything() {
+        removeAllWidgets();
+        settings.clearEverything();
+        layout.reset();
+        reloadApps();
+        applyTheme();
+        applyBackground();
+        dock.applyTheme();
+        pager.setCurrentPage(layout.defaultPage(), false);
+        pager.rebuild();
+        toast("Nexus è stato ripristinato");
+    }
+
+    /** Reloads applications (visibility included) and repaints the whole launcher. */
+    public void refreshEverything() {
+        reloadApps();
+        applyTheme();
+        applyBackground();
+        dock.applyTheme();
+        pager.rebuild();
+        if (drawerOpen) {
+            closeDrawer();
+        }
     }
 
     public void onSettingsChanged() {
@@ -561,6 +640,13 @@ public class HomeScreen extends FrameLayout {
     }
 
     public boolean handleBack() {
+        if (settingsHub != null) {
+            if (settingsHub.handleBack()) {
+                return true;
+            }
+            closeSettings();
+            return true;
+        }
         if (drawerOpen) {
             closeDrawer();
             return true;
@@ -569,6 +655,9 @@ public class HomeScreen extends FrameLayout {
     }
 
     public void goHome() {
+        if (settingsHub != null) {
+            closeSettings();
+        }
         if (drawerOpen) {
             closeDrawer();
         }
@@ -580,7 +669,19 @@ public class HomeScreen extends FrameLayout {
         if (widgetHost.handleActivityResult(requestCode, resultCode, data)) {
             return true;
         }
-        return wallpaperPicker.handleActivityResult(requestCode, resultCode, data);
+        if (wallpaperPicker.handleActivityResult(requestCode, resultCode, data)) {
+            return true;
+        }
+        return SettingsBackup.handleActivityResult(activity, settings, requestCode, resultCode,
+                data, new Runnable() {
+                    @Override
+                    public void run() {
+                        refreshEverything();
+                        if (settingsHub != null) {
+                            settingsHub.refreshPage();
+                        }
+                    }
+                });
     }
 
     public void onHostResume() {

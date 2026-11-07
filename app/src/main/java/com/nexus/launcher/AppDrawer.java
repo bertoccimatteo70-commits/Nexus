@@ -44,7 +44,9 @@ public class AppDrawer extends FrameLayout {
         if (apps != null) {
             sorted.addAll(apps);
         }
-        Collections.sort(sorted, AppInfo.ALPHABETICAL);
+        if (settings.drawerAlphabetical()) {
+            Collections.sort(sorted, AppInfo.ALPHABETICAL);
+        }
 
         View backdrop = new View(activity);
         backdrop.setBackgroundColor(settings.scrimColor(activity));
@@ -149,7 +151,8 @@ public class AppDrawer extends FrameLayout {
         grid.setApps(filtered);
         String text;
         if (query == null || query.trim().isEmpty()) {
-            text = filtered.size() + " app installate - ordine alfabetico";
+            text = filtered.size() + " app installate · "
+                    + (settings.drawerAlphabetical() ? "ordine alfabetico" : "ordine di installazione");
         } else {
             text = filtered.size() + " risultati";
         }
