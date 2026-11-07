@@ -8,13 +8,14 @@ dimostrativa: sostituisce la home del dispositivo.
 
 - **Launcher predefinito**: `MainActivity` dichiara i filtri `HOME` e `LAUNCHER`, quindi Android
   la propone come home. Dalle impostazioni si apre direttamente la richiesta del ruolo HOME.
-- **Home con griglia app**: griglia scorrevole delle applicazioni installate, con numero di
-  colonne e dimensione delle icone calcolati dalla larghezza dello schermo.
+- **Home a pagine**: pagine scorrevoli con pagina centrale predefinita, drag and drop delle
+  icone tra posizioni e pagine, cartelle create trascinando un'icona su un'altra e widget reali
+  tramite `AppWidgetHost` (scelta, configurazione, ridimensionamento, rimozione).
 - **Icone arrotondate**: le icone di sistema vengono ritagliate in un quadrato arrotondato
   (stile Pixel) e messe in cache per non essere ricalcolate.
 - **Avvio applicazioni**: tap su icona, dock o risultato di ricerca.
 - **Dock personalizzabile**: fino a 5 app scelte dall'utente e salvate nelle preferenze.
-- **Barra di ricerca**: filtra la griglia della home in tempo reale.
+- **Barra di ricerca**: apre il cassetto app con la ricerca in tempo reale già filtrata.
 - **Menu delle applicazioni**: cassetto a scomparsa con ricerca e tutte le app installate.
 - **Sfondo personalizzato**: immagine dalla galleria (copiata in memoria interna), sfondo di
   sistema oppure gradiente predefinito Nexus.
@@ -35,19 +36,53 @@ dimostrativa: sostituisce la home del dispositivo.
 
 ```bash
 # con JDK 17 e Android SDK 35 installati
-gradle --no-daemon assembleDebug
+gradle --no-daemon assembleDebug     # APK di debug
 ```
 
 APK generato in `app/build/outputs/apk/debug/app-debug.apk`.
 
-## APK automatico con GitHub Actions
+### Firmare la release in locale
 
-Il workflow `.github/workflows/android.yml` compila a ogni push (qualsiasi branch) e a ogni
-pull request, e carica l'APK come artifact scaricabile:
+La firma della build release legge tutto dall'ambiente, quindi il keystore non sta nel repository:
 
-1. Apri la scheda **Actions** del repository.
-2. Seleziona l'esecuzione **Build NEXUS APK**.
-3. Nella sezione **Artifacts** scarica `NEXUS-debug-apk`.
+```bash
+export KEYSTORE_FILE=/percorso/nexus-release.jks
+export KEYSTORE_PASSWORD=...
+export KEY_ALIAS=nexus
+export KEY_PASSWORD=...
+gradle --no-daemon assembleRelease
+```
+
+APK firmato in `app/build/outputs/apk/release/app-release.apk`. Senza queste variabili
+`assembleRelease` produce un APK non firmato (`app-release-unsigned.apk`) e la CI non pubblica release.
+
+## APK automatico e release firmata
+
+Il workflow `.github/workflows/android.yml` compila a ogni push e pull request. Con i segreti di
+firma configurati costruisce `assembleRelease`, verifica la firma con `apksigner`, rifiuta un APK
+`debuggable` e, sui push a `main`, crea o aggiorna la release `v<versionName>` allegando
+`Nexus-<versionName>.apk`: il download è diretto, senza passare dagli artifact.
+
+Segreti da aggiungere in **Settings → Secrets and variables → Actions**:
+
+| Segreto | Contenuto |
+| --- | --- |
+| `ANDROID_KEYSTORE_BASE64` | keystore `.jks` codificato in base64 |
+| `ANDROID_KEYSTORE_PASSWORD` | password del keystore |
+| `ANDROID_KEY_ALIAS` | alias della chiave |
+| `ANDROID_KEY_PASSWORD` | password della chiave |
+
+Generazione del keystore e codifica base64:
+
+```bash
+keytool -genkeypair -keystore nexus-release.jks -alias nexus -keyalg RSA -keysize 2048 \
+  -validity 10000 -dname "CN=Nexus, O=Nexus, C=IT"
+base64 -w0 nexus-release.jks > nexus-release.jks.b64   # su macOS: base64 nexus-release.jks
+```
+
+Conserva il keystore e le password: senza la stessa chiave gli aggiornamenti futuri non possono
+sovrascrivere l'app installata. Senza `ANDROID_KEYSTORE_BASE64` la CI compila solo debug, carica
+l'artifact `NEXUS-apk` e salta la pubblicazione della release.
 
 ## Struttura
 

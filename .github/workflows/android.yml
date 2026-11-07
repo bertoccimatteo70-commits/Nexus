@@ -47,7 +47,37 @@ jobs:
         with:
           gradle-version: '8.9'
 
+      - name: Prepare release signing key
+        id: signing
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -e
+          if [ -n "$KEYSTORE_BASE64" ] && [ -n "$KEYSTORE_PASSWORD" ] && [ -n "$KEY_ALIAS" ] && [ -n "$KEY_PASSWORD" ]; then
+            printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/nexus-release.jks"
+            test -s "$RUNNER_TEMP/nexus-release.jks"
+            {
+              echo "KEYSTORE_FILE=$RUNNER_TEMP/nexus-release.jks"
+              echo "KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD"
+              echo "KEY_ALIAS=$KEY_ALIAS"
+              echo "KEY_PASSWORD=$KEY_PASSWORD"
+            } >> "$GITHUB_ENV"
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+            echo "Chiave di firma caricata: build release firmata"
+          else
+            echo "::warning::Segreti di firma assenti (ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD): compilo solo debug e non pubblico release."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build signed release APK
+        if: steps.signing.outputs.ready == 'true'
+        run: gradle --no-daemon assembleRelease
+
       - name: Build debug APK
+        if: steps.signing.outputs.ready != 'true'
         run: gradle --no-daemon assembleDebug
 
       - name: Read launcher version
@@ -58,26 +88,58 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
 
+      - name: Collect APK
+        id: apk
+        run: |
+          set -e
+          VERSION="${{ steps.version.outputs.version }}"
+          mkdir -p dist
+          if [ "${{ steps.signing.outputs.ready }}" = "true" ]; then
+            SRC=app/build/outputs/apk/release/app-release.apk
+            NAME="Nexus-${VERSION}.apk"
+          else
+            SRC=app/build/outputs/apk/debug/app-debug.apk
+            NAME="Nexus-${VERSION}-debug.apk"
+          fi
+          test -f "$SRC"
+          cp "$SRC" "dist/$NAME"
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+          echo "APK raccolto: dist/$NAME"
+
+      - name: Verify release signature
+        if: steps.signing.outputs.ready == 'true'
+        run: |
+          set -e
+          APKSIGNER=$(find "$ANDROID_HOME/build-tools" -name apksigner | sort | tail -1)
+          AAPT=$(find "$ANDROID_HOME/build-tools" -name aapt2 | sort | tail -1)
+          APK="dist/${{ steps.apk.outputs.name }}"
+          "$APKSIGNER" verify --verbose --print-certs "$APK"
+          "$AAPT" dump badging "$APK" | grep -E "^package:|^application:" || true
+          if "$AAPT" dump badging "$APK" | grep -q "application-debuggable"; then
+            echo "::error::L'APK release risulta debuggable"
+            exit 1
+          fi
+
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: NEXUS-debug-apk
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: NEXUS-apk
+          path: dist/*.apk
           if-no-files-found: error
 
-      - name: Publish downloadable GitHub Release
-        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+      - name: Publish signed release on GitHub
+        if: steps.signing.outputs.ready == 'true' && github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -e
           TAG="${{ steps.version.outputs.tag }}"
           VERSION="${{ steps.version.outputs.version }}"
-          APK="Nexus-${VERSION}-debug.apk"
-          cp app/build/outputs/apk/debug/app-debug.apk "$APK"
+          APK="${{ steps.apk.outputs.name }}"
+          ASSET="dist/${APK}"
 
           NOTES=$(cat <<'EOF'
-          APK debug di Nexus, il launcher Android in Java con estetica Pixel e dettagli iOS.
+          Build **release firmata** di Nexus, il launcher Android in Java con estetica Pixel e dettagli iOS.
 
           Cosa contiene:
           - pagine home multiple scorrevoli, con pagina centrale predefinita
@@ -93,19 +155,21 @@ jobs:
           per il browser o il file manager e aprilo. Richiede Android 10 (API 29) o successivo.
           Dopo l'installazione puoi impostare Nexus come launcher predefinito dalle impostazioni.
 
-          Nota: build debug, firmata con la chiave di debug; non e una build di produzione.
+          Firma: chiave di release custodita nei segreti del repository; l'APK e aggiornabile
+          nel tempo senza disinstallare le versioni precedenti firmate con la stessa chiave.
           EOF
           )
 
           if gh release view "$TAG" > /dev/null 2>&1; then
-            echo "Release $TAG esistente: aggiorno l'APK"
-            gh release upload "$TAG" "$APK" --clobber
+            echo "Release $TAG esistente: aggiorno l'APK firmato"
+            gh release upload "$TAG" "$ASSET" --clobber
+            gh release delete-asset "$TAG" "Nexus-${VERSION}-debug.apk" --yes || true
           else
             echo "Creo la release $TAG"
-            gh release create "$TAG" "$APK" \
+            gh release create "$TAG" "$ASSET" \
               --title "Nexus $VERSION" \
               --notes "$NOTES" \
               --latest
           fi
 
-          echo "Asset pubblicato: https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/${APK}"
+          echo "APK firmato pubblicato: https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/${APK}"

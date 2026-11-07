@@ -2,6 +2,16 @@ plugins {
     id 'com.android.application'
 }
 
+// Release signing comes from the environment so the keystore never lives in the repository.
+// CI decodes ANDROID_KEYSTORE_BASE64 into a file and exports these variables before building;
+// locally you can export the same variables to produce a signed APK.
+def releaseKeystorePath = System.getenv('KEYSTORE_FILE')
+def releaseKeystoreFile = releaseKeystorePath ? new File(releaseKeystorePath) : null
+def releaseSigningReady = releaseKeystoreFile != null && releaseKeystoreFile.exists()
+        && System.getenv('KEYSTORE_PASSWORD') != null
+        && System.getenv('KEY_ALIAS') != null
+        && System.getenv('KEY_PASSWORD') != null
+
 android {
     namespace 'com.nexus.launcher'
     compileSdk 35
@@ -14,10 +24,36 @@ android {
         versionName '1.1'
     }
 
+    signingConfigs {
+        release {
+            if (releaseSigningReady) {
+                storeFile releaseKeystoreFile
+                storePassword System.getenv('KEYSTORE_PASSWORD')
+                keyAlias System.getenv('KEY_ALIAS')
+                keyPassword System.getenv('KEY_PASSWORD')
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            shrinkResources false
+            if (releaseSigningReady) {
+                signingConfig signingConfigs.release
+            }
+        }
+    }
+
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
     }
+}
+
+if (!releaseSigningReady) {
+    logger.lifecycle('Firma release non configurata: assembleRelease produce un APK non firmato '
+            + 'e la CI pubblica solo la build debug.')
 }
 
 dependencies {
