@@ -5,10 +5,10 @@ import android.graphics.Color;
 import android.graphics.drawable.ColorDrawable;
 import android.view.Gravity;
 import android.view.View;
-import android.view.ViewGroup;
 import android.view.Window;
 import android.view.WindowManager;
 import android.widget.LinearLayout;
+import android.widget.ScrollView;
 import android.widget.TextView;
 
 import java.util.List;
@@ -18,18 +18,31 @@ import java.util.List;
  */
 public final class SettingsPanel {
 
+    /** Callbacks for the actions that live on the home screen. */
+    public interface Actions {
+        void onWallpaper();
+
+        void onAddWidget();
+
+        void onResetHome();
+
+        void onPages();
+    }
+
     private SettingsPanel() {
     }
 
     public static void show(final MainActivity activity, final LauncherSettings settings,
-                            final List<AppInfo> apps, final Runnable onWallpaper,
+                            final List<AppInfo> apps, final Actions actions,
                             final SettingsDialogs.OnSettingsChanged callback) {
 
         final Dialog dialog = new Dialog(activity, R.style.NexusSheet);
 
+        ScrollView scroll = new ScrollView(activity);
+        scroll.setBackground(Ui.rounded(settings.surfaceColor(activity), Ui.dp(activity, 28)));
+
         LinearLayout root = new LinearLayout(activity);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setBackground(Ui.rounded(settings.surfaceColor(activity), Ui.dp(activity, 28)));
         root.setPadding(Ui.dp(activity, 16), Ui.dp(activity, 10),
                 Ui.dp(activity, 16), Ui.dp(activity, 20));
 
@@ -69,6 +82,36 @@ public final class SettingsPanel {
             }
         }));
 
+        root.addView(row(activity, settings, "Griglia e icone",
+                settings.getColumns(activity) + " colonne - " + settings.getIconSizeDp() + " dp",
+                new Runnable() {
+                    @Override
+                    public void run() {
+                        dialog.dismiss();
+                        SettingsDialogs.showAppearanceDialog(activity, settings, callback);
+                    }
+                }));
+
+        root.addView(row(activity, settings, "Pagine home", "Gestisci", new Runnable() {
+            @Override
+            public void run() {
+                dialog.dismiss();
+                if (actions != null) {
+                    actions.onPages();
+                }
+            }
+        }));
+
+        root.addView(row(activity, settings, "Widget", "Aggiungi", new Runnable() {
+            @Override
+            public void run() {
+                dialog.dismiss();
+                if (actions != null) {
+                    actions.onAddWidget();
+                }
+            }
+        }));
+
         root.addView(row(activity, settings, "Dock", dockLabel(settings), new Runnable() {
             @Override
             public void run() {
@@ -81,17 +124,28 @@ public final class SettingsPanel {
             @Override
             public void run() {
                 dialog.dismiss();
-                if (onWallpaper != null) {
-                    onWallpaper.run();
+                if (actions != null) {
+                    actions.onWallpaper();
                 }
             }
         }));
 
-        root.addView(row(activity, settings, "Launcher predefinito", "Apri impostazioni", new Runnable() {
+        root.addView(row(activity, settings, "Launcher predefinito", "Apri impostazioni",
+                new Runnable() {
+                    @Override
+                    public void run() {
+                        dialog.dismiss();
+                        activity.requestDefaultLauncher();
+                    }
+                }));
+
+        root.addView(row(activity, settings, "Ripristina home", "Ripristina", new Runnable() {
             @Override
             public void run() {
                 dialog.dismiss();
-                activity.requestDefaultLauncher();
+                if (actions != null) {
+                    actions.onResetHome();
+                }
             }
         }));
 
@@ -103,7 +157,10 @@ public final class SettingsPanel {
             }
         }));
 
-        dialog.setContentView(root);
+        scroll.addView(root, new ScrollView.LayoutParams(
+                ScrollView.LayoutParams.MATCH_PARENT, ScrollView.LayoutParams.WRAP_CONTENT));
+
+        dialog.setContentView(scroll);
         dialog.show();
 
         Window window = dialog.getWindow();
@@ -119,7 +176,7 @@ public final class SettingsPanel {
         }
     }
 
-    private static View row(final MainActivity activity, LauncherSettings settings,
+    private static View row(final MainActivity activity, final LauncherSettings settings,
                             String label, String value, final Runnable onClick) {
         LinearLayout row = new LinearLayout(activity);
         row.setOrientation(LinearLayout.HORIZONTAL);
@@ -127,33 +184,30 @@ public final class SettingsPanel {
         row.setPadding(Ui.dp(activity, 14), Ui.dp(activity, 15),
                 Ui.dp(activity, 14), Ui.dp(activity, 15));
         row.setBackground(Ui.rounded(settings.rowBackground(activity), Ui.dp(activity, 16)));
-        row.setClickable(true);
-        row.setFocusable(true);
-
-        TextView labelView = new TextView(activity);
-        labelView.setText(label);
-        labelView.setTextSize(14f);
-        labelView.setTextColor(settings.textColor(activity));
-        row.addView(labelView, new LinearLayout.LayoutParams(
-                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
-
-        TextView valueView = new TextView(activity);
-        valueView.setText(value);
-        valueView.setTextSize(12f);
-        valueView.setTextColor(settings.secondaryTextColor(activity));
-        row.addView(valueView);
-
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+        LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        params.bottomMargin = Ui.dp(activity, 8);
-        row.setLayoutParams(params);
-
+        rowParams.bottomMargin = Ui.dp(activity, 8);
+        row.setLayoutParams(rowParams);
+        row.setClickable(true);
         row.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 onClick.run();
             }
         });
+
+        TextView name = new TextView(activity);
+        name.setText(label);
+        name.setTextSize(15f);
+        name.setTextColor(settings.textColor(activity));
+        row.addView(name, new LinearLayout.LayoutParams(
+                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+
+        TextView current = new TextView(activity);
+        current.setText(value);
+        current.setTextSize(12f);
+        current.setTextColor(settings.secondaryTextColor(activity));
+        row.addView(current);
 
         return row;
     }
@@ -183,9 +237,9 @@ public final class SettingsPanel {
             case LauncherSettings.BG_IMAGE:
                 return "Immagine";
             case LauncherSettings.BG_SYSTEM:
-                return "Di sistema";
+                return "Sistema";
             default:
-                return "Predefinito";
+                return "Nexus";
         }
     }
 }

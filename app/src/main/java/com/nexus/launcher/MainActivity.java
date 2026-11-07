@@ -93,6 +93,17 @@ public class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         applySystemBars();
+        if (homeScreen != null) {
+            homeScreen.onHostResume();
+        }
+    }
+
+    @Override
+    protected void onPause() {
+        if (homeScreen != null) {
+            homeScreen.onHostPause();
+        }
+        super.onPause();
     }
 
     @Override

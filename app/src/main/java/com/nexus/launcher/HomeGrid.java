@@ -27,6 +27,10 @@ public class HomeGrid extends GridView {
         void onAppClick(AppInfo app);
     }
 
+    public interface OnAppLongClickListener {
+        void onAppLongClick(AppInfo app);
+    }
+
     private final LauncherSettings settings;
     private final AppGridAdapter adapter = new AppGridAdapter();
     private final List<AppInfo> apps = new ArrayList<>();
@@ -35,6 +39,7 @@ public class HomeGrid extends GridView {
 
     private boolean showAllAppsTile = false;
     private OnAppClickListener appClickListener;
+    private OnAppLongClickListener appLongClickListener;
     private Runnable allAppsClickListener;
 
     public HomeGrid(Context context, LauncherSettings settings) {
@@ -45,18 +50,12 @@ public class HomeGrid extends GridView {
         if (screenWidthDp <= 0) {
             screenWidthDp = 360;
         }
-        int columns;
-        if (screenWidthDp >= 600) {
-            columns = 6;
-        } else if (screenWidthDp >= 400) {
-            columns = 5;
-        } else {
-            columns = 4;
-        }
-
-        int cell = screenWidthDp / columns;
-        this.iconSizePx = Ui.dp(context, Math.max(42, Math.min(56, cell - 16)));
+        int columns = Math.max(3, settings.getColumns(context));
+        this.iconSizePx = settings.getIconSizePx(context);
         this.labelTextSizeDp = screenWidthDp >= 400 ? 11 : 10;
+        if (settings.isLite()) {
+            setOverScrollMode(OVER_SCROLL_NEVER);
+        }
 
         setNumColumns(columns);
         setStretchMode(GridView.STRETCH_COLUMN_WIDTH);
@@ -90,6 +89,23 @@ public class HomeGrid extends GridView {
 
     public void setOnAllAppsClickListener(Runnable listener) {
         this.allAppsClickListener = listener;
+    }
+
+    public void setOnAppLongClickListener(OnAppLongClickListener listener) {
+        this.appLongClickListener = listener;
+        setOnItemLongClickListener(new OnItemLongClickListener() {
+            @Override
+            public boolean onItemLongClick(AdapterView<?> parent, View view, int position, long id) {
+                if (showAllAppsTile && position == apps.size()) {
+                    return false;
+                }
+                if (position >= 0 && position < apps.size() && appLongClickListener != null) {
+                    appLongClickListener.onAppLongClick(apps.get(position));
+                    return true;
+                }
+                return false;
+            }
+        });
     }
 
     public void setShowAllAppsTile(boolean show) {

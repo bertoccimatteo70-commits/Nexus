@@ -1,7 +1,17 @@
 package com.nexus.launcher;
 
 import android.app.Activity;
+import android.app.Dialog;
 import android.content.DialogInterface;
+import android.graphics.Color;
+import android.graphics.drawable.ColorDrawable;
+import android.view.Gravity;
+import android.view.View;
+import android.view.Window;
+import android.view.WindowManager;
+import android.widget.CheckBox;
+import android.widget.LinearLayout;
+import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.appcompat.app.AlertDialog;
@@ -135,6 +145,148 @@ public final class SettingsDialogs {
         });
         builder.setNegativeButton("Annulla", null);
         builder.show();
+    }
+
+    /** Grid columns, icon size and labels, applied immediately. */
+    public static void showAppearanceDialog(final Activity activity, final LauncherSettings settings,
+                                            final OnSettingsChanged callback) {
+        final Dialog dialog = new Dialog(activity, R.style.NexusSheet);
+
+        LinearLayout root = new LinearLayout(activity);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setBackground(Ui.rounded(settings.surfaceColor(activity), Ui.dp(activity, 28)));
+        root.setPadding(Ui.dp(activity, 18), Ui.dp(activity, 16),
+                Ui.dp(activity, 18), Ui.dp(activity, 18));
+
+        TextView title = new TextView(activity);
+        title.setText("Griglia e icone");
+        title.setTextSize(18f);
+        title.setTextColor(settings.textColor(activity));
+        LinearLayout.LayoutParams titleParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        titleParams.bottomMargin = Ui.dp(activity, 12);
+        root.addView(title, titleParams);
+
+        final TextView columnsValue = new TextView(activity);
+        columnsValue.setTextSize(12f);
+        columnsValue.setTextColor(settings.secondaryTextColor(activity));
+        columnsValue.setText(settings.getColumns(activity) + " colonne");
+
+        final TextView iconsValue = new TextView(activity);
+        iconsValue.setTextSize(12f);
+        iconsValue.setTextColor(settings.secondaryTextColor(activity));
+        iconsValue.setText(settings.getIconSizeDp() + " dp");
+
+        root.addView(valueRow(activity, settings, "Colonne home", columnsValue, new Runnable() {
+            @Override
+            public void run() {
+                final String[] labels = {"Automatico", "4 colonne", "5 colonne", "6 colonne"};
+                final int[] values = {0, 4, 5, 6};
+                new AlertDialog.Builder(activity)
+                        .setTitle("Colonne home")
+                        .setSingleChoiceItems(labels, -1, new DialogInterface.OnClickListener() {
+                            @Override
+                            public void onClick(DialogInterface d, int which) {
+                                settings.setColumns(values[which]);
+                                columnsValue.setText(settings.getColumns(activity) + " colonne");
+                                d.dismiss();
+                                if (callback != null) {
+                                    callback.onSettingsChanged();
+                                }
+                            }
+                        })
+                        .setNegativeButton("Annulla", null)
+                        .show();
+            }
+        }));
+
+        root.addView(valueRow(activity, settings, "Dimensione icone", iconsValue, new Runnable() {
+            @Override
+            public void run() {
+                final String[] labels = {"Piccole (44 dp)", "Medie (52 dp)",
+                        "Grandi (60 dp)", "Molto grandi (68 dp)"};
+                final int[] values = {44, 52, 60, 68};
+                new AlertDialog.Builder(activity)
+                        .setTitle("Dimensione icone")
+                        .setSingleChoiceItems(labels, -1, new DialogInterface.OnClickListener() {
+                            @Override
+                            public void onClick(DialogInterface d, int which) {
+                                settings.setIconSizeDp(values[which]);
+                                iconsValue.setText(settings.getIconSizeDp() + " dp");
+                                d.dismiss();
+                                if (callback != null) {
+                                    callback.onSettingsChanged();
+                                }
+                            }
+                        })
+                        .setNegativeButton("Annulla", null)
+                        .show();
+            }
+        }));
+
+        CheckBox labels = new CheckBox(activity);
+        labels.setText("Mostra le etichette delle app");
+        labels.setTextColor(settings.textColor(activity));
+        labels.setChecked(settings.showLabels());
+        labels.setPadding(Ui.dp(activity, 6), Ui.dp(activity, 10),
+                Ui.dp(activity, 6), Ui.dp(activity, 10));
+        labels.setOnCheckedChangeListener((button, checked) -> {
+            settings.setShowLabels(checked);
+            if (callback != null) {
+                callback.onSettingsChanged();
+            }
+        });
+        root.addView(labels);
+
+        TextView close = new TextView(activity);
+        close.setText("Chiudi");
+        close.setTextSize(14f);
+        close.setGravity(Gravity.CENTER);
+        close.setTextColor(LauncherSettings.COLOR_ACCENT);
+        close.setPadding(Ui.dp(activity, 12), Ui.dp(activity, 14),
+                Ui.dp(activity, 12), Ui.dp(activity, 14));
+        close.setClickable(true);
+        close.setOnClickListener(v -> dialog.dismiss());
+        LinearLayout.LayoutParams closeParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        closeParams.topMargin = Ui.dp(activity, 10);
+        root.addView(close, closeParams);
+
+        dialog.setContentView(root);
+        dialog.show();
+
+        Window window = dialog.getWindow();
+        if (window != null) {
+            window.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+            window.setLayout(WindowManager.LayoutParams.MATCH_PARENT,
+                    WindowManager.LayoutParams.WRAP_CONTENT);
+            window.setGravity(Gravity.BOTTOM);
+        }
+    }
+
+    private static View valueRow(final Activity activity, final LauncherSettings settings,
+                                 String label, TextView value, final Runnable onClick) {
+        LinearLayout row = new LinearLayout(activity);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(Ui.dp(activity, 14), Ui.dp(activity, 15),
+                Ui.dp(activity, 14), Ui.dp(activity, 15));
+        row.setBackground(Ui.rounded(settings.rowBackground(activity), Ui.dp(activity, 16)));
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        params.bottomMargin = Ui.dp(activity, 8);
+        row.setLayoutParams(params);
+        row.setClickable(true);
+        row.setOnClickListener(v -> onClick.run());
+
+        TextView name = new TextView(activity);
+        name.setText(label);
+        name.setTextSize(15f);
+        name.setTextColor(settings.textColor(activity));
+        row.addView(name, new LinearLayout.LayoutParams(
+                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        row.addView(value);
+        return row;
     }
 
     public static void showAboutDialog(Activity activity, LauncherSettings settings) {

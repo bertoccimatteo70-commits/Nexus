@@ -33,4 +33,14 @@ public final class Ui {
         drawable.setShape(GradientDrawable.RECTANGLE);
         return drawable;
     }
+
+    public static int statusBarHeight(Context context) {
+        int id = context.getResources().getIdentifier("status_bar_height", "dimen", "android");
+        return id > 0 ? context.getResources().getDimensionPixelSize(id) : dp(context, 24);
+    }
+
+    public static int navBarHeight(Context context) {
+        int id = context.getResources().getIdentifier("navigation_bar_height", "dimen", "android");
+        return id > 0 ? context.getResources().getDimensionPixelSize(id) : dp(context, 16);
+    }
 }

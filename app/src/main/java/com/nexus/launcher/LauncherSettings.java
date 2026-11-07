@@ -25,6 +25,10 @@ public class LauncherSettings {
     private static final String KEY_BG_PATH = "bg_path";
     private static final String KEY_DOCK = "dock_packages";
     private static final String KEY_FIRST_LAUNCH = "first_launch_done";
+    private static final String KEY_COLUMNS = "home_columns";
+    private static final String KEY_ICON_SIZE = "icon_size_dp";
+    private static final String KEY_LABELS = "show_labels";
+    private static final String KEY_WIDGET_HOST = "widget_host_id";
 
     public enum ThemeMode {
         SYSTEM,
@@ -175,5 +179,68 @@ public class LauncherSettings {
 
     public void setFirstLaunchDone(boolean done) {
         prefs.edit().putBoolean(KEY_FIRST_LAUNCH, done).apply();
+    }
+
+    // ------------------------------------------------------- home appearance
+
+    /** Columns of the home grid; 0 means automatic based on the screen width. */
+    public int getColumns(Context context) {
+        int saved = prefs.getInt(KEY_COLUMNS, 0);
+        if (saved >= 3 && saved <= 7) {
+            return saved;
+        }
+        int widthDp = context.getResources().getConfiguration().screenWidthDp;
+        if (widthDp <= 0) {
+            widthDp = 360;
+        }
+        if (widthDp >= 600) {
+            return 6;
+        }
+        if (widthDp >= 400) {
+            return 5;
+        }
+        return 4;
+    }
+
+    public void setColumns(int columns) {
+        if (columns <= 0) {
+            prefs.edit().remove(KEY_COLUMNS).apply();
+        } else {
+            prefs.edit().putInt(KEY_COLUMNS, columns).apply();
+        }
+    }
+
+    public int getIconSizeDp() {
+        int value = prefs.getInt(KEY_ICON_SIZE, 52);
+        return Math.max(38, Math.min(72, value));
+    }
+
+    public void setIconSizeDp(int sizeDp) {
+        prefs.edit().putInt(KEY_ICON_SIZE, sizeDp).apply();
+    }
+
+    public int getIconSizePx(Context context) {
+        return Ui.dp(context, getIconSizeDp());
+    }
+
+    public boolean showLabels() {
+        return prefs.getBoolean(KEY_LABELS, true);
+    }
+
+    public void setShowLabels(boolean show) {
+        prefs.edit().putBoolean(KEY_LABELS, show).apply();
+    }
+
+    public int getWidgetHostId() {
+        return prefs.getInt(KEY_WIDGET_HOST, 0);
+    }
+
+    public void setWidgetHostId(int hostId) {
+        prefs.edit().putInt(KEY_WIDGET_HOST, hostId).apply();
+    }
+
+    /** Animation duration: Nexus Lite disables transitions and extra rendering work. */
+    public int animDuration(int base) {
+        return isLite() ? 0 : base;
     }
 }
