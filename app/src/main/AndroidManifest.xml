@@ -18,7 +18,8 @@
         android:allowBackup="true"
         android:label="NEXUS"
         android:theme="@style/Theme.Nexus"
-        android:icon="@drawable/ic_nexus"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:hardwareAccelerated="true"
         android:windowSoftInputMode="adjustResize">
