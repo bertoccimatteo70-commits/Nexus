@@ -102,6 +102,9 @@ public class HomePageView extends ViewGroup {
         items.clear();
         itemBounds.clear();
         itemStartCells.clear();
+        // Keep the cell icons in sync with the configured size before the first measure,
+        // otherwise newly bound pages use the default field value and clip their labels.
+        iconPx = settings.getIconSizePx(getContext());
         HomeLayout.Page page = pager.getLayout().page(pageIndex);
         if (page != null) {
             items.addAll(page.items);

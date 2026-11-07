@@ -153,7 +153,8 @@ jobs:
           NOTES=$(cat <<EOF
           $STATE
 
-          ## Novita di Nexus 1.3
+          ## Novita di Nexus 1.3.1
+          - corrette le etichette delle app sulla home, che potevano risultare schiacciate subito dopo l'avvio
           - nuova sezione **Informazioni sul dispositivo** in stile realme UI, con schede arrotondate e icone colorate
           - dispositivo: nome commerciale, produttore, modello, nome dispositivo, Android, API, build e patch di sicurezza
           - hardware: processore, architettura, core, RAM totale e disponibile, memoria interna, risoluzione, densita e frequenza di aggiornamento
