@@ -153,7 +153,7 @@ public class HomeLayout {
         pages.add(page);
         String[][] slots = {
                 {"dialer", "telefono", "phone", "telecom"},
-                {"messagg", "message", "sms", "mms"},
+                {"messag", "sms", "mms"},
                 {"camera", "fotocamera"},
                 {"settings", "impostazioni"}
         };
