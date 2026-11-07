@@ -131,7 +131,10 @@ public class MainActivity extends Activity {
         if (app == null) {
             return;
         }
-        Intent intent = getPackageManager().getLaunchIntentForPackage(app.getPackageName());
+        Intent intent = app.getLaunchIntent();
+        if (intent == null) {
+            intent = getPackageManager().getLaunchIntentForPackage(app.getPackageName());
+        }
         if (intent == null) {
             Toast.makeText(this, "Impossibile aprire " + app.getLabel(), Toast.LENGTH_SHORT).show();
             return;

@@ -34,6 +34,7 @@ public class WidgetHost extends AppWidgetHost {
     private final LauncherSettings settings;
     private final AppWidgetManager manager;
     private final Map<Integer, AppWidgetHostView> views = new HashMap<>();
+    private final Map<Integer, int[]> lastSizes = new HashMap<>();
 
     private int pendingId = -1;
     private int pendingSpanX = 1;
@@ -264,6 +265,7 @@ public class WidgetHost extends AppWidgetHost {
 
     public void deleteWidget(int appWidgetId) {
         views.remove(appWidgetId);
+        lastSizes.remove(appWidgetId);
         try {
             deleteAppWidgetId(appWidgetId);
         } catch (Exception ignored) {
@@ -277,6 +279,11 @@ public class WidgetHost extends AppWidgetHost {
         if (view == null) {
             return;
         }
+        int[] previous = lastSizes.get(appWidgetId);
+        if (previous != null && previous[0] == widthPx && previous[1] == heightPx) {
+            return;
+        }
+        lastSizes.put(appWidgetId, new int[]{widthPx, heightPx});
         float density = activity.getResources().getDisplayMetrics().density;
         int widthDp = Math.max(1, Math.round(widthPx / density));
         int heightDp = Math.max(1, Math.round(heightPx / density));

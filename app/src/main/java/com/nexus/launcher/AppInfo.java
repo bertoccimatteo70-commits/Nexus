@@ -1,5 +1,6 @@
 package com.nexus.launcher;
 
+import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
@@ -33,6 +34,7 @@ public class AppInfo {
     private final String label;
 
     private Drawable icon;
+    private Intent launchIntent;
     private Drawable roundedIcon;
     private int roundedIconSize = -1;
     private int roundedIconShape = -1;
@@ -96,6 +98,21 @@ public class AppInfo {
             return true;
         }
         return packageName.toLowerCase().contains(lower);
+    }
+
+    /**
+     * Cached launch intent built from the resolved activity: launching an app no longer needs
+     * a PackageManager round trip on the main thread.
+     */
+    public Intent getLaunchIntent() {
+        if (launchIntent == null && resolveInfo.activityInfo != null) {
+            launchIntent = new Intent(Intent.ACTION_MAIN)
+                    .addCategory(Intent.CATEGORY_LAUNCHER)
+                    .setComponent(new ComponentName(packageName, resolveInfo.activityInfo.name))
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK
+                            | Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED);
+        }
+        return launchIntent;
     }
 
     public Drawable getIcon() {

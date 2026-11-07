@@ -30,7 +30,7 @@ public class LauncherSettings {
     public static final int[] CATEGORY_TINTS = {
             0xFFE9DEFB, 0xFFDCE7FF, 0xFFFFE1EA, 0xFFD8F3E6,
             0xFFFFEBD2, 0xFFE3E1FF, 0xFFFFF4C9, 0xFFD9F1F7,
-            0xFFE8E8EF, 0xFFF0E6FB
+            0xFFE8E8EF, 0xFFF0E6FB, 0xFFE4F0EA
     };
 
     public static final int BG_DEFAULT = 0;

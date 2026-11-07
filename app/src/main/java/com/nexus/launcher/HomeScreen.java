@@ -27,6 +27,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /**
  * Home screen: wallpaper, clock, search, swipeable pages with drag and drop, widgets,
@@ -60,8 +62,25 @@ public class HomeScreen extends FrameLayout {
     private DockBar dock;
 
     private AppDrawer drawer;
+    private AppDrawer cachedDrawer;
     private boolean drawerOpen;
     private SettingsHub settingsHub;
+
+    private final ExecutorService ioExecutor = Executors.newSingleThreadExecutor();
+    private int wallpaperRequest;
+    private String wallpaperPath;
+    private Bitmap wallpaperBitmap;
+    private int drawerGeneration;
+
+    private final Runnable prewarmDrawer = new Runnable() {
+        @Override
+        public void run() {
+            if (!drawerOpen && settingsHub == null && cachedDrawer == null
+                    && !allApps.isEmpty()) {
+                cachedDrawer = createDrawer();
+            }
+        }
+    };
 
     private final Runnable clockTick = new Runnable() {
         @Override
@@ -116,6 +135,7 @@ public class HomeScreen extends FrameLayout {
         applyTheme();
         applyBackground();
         updateClock();
+        handler.postDelayed(prewarmDrawer, 900L);
     }
 
     // ------------------------------------------------------------------ build
@@ -264,6 +284,11 @@ public class HomeScreen extends FrameLayout {
     // ------------------------------------------------------------------- apps
 
     private void reloadApps() {
+        drawerGeneration++;
+        cachedDrawer = null;
+        if (drawerOpen) {
+            closeDrawer();
+        }
         allApps.clear();
         appIndex.clear();
         Set<String> hidden = new HashSet<>(settings.getHiddenPackages());
@@ -383,16 +408,8 @@ public class HomeScreen extends FrameLayout {
 
     // -------------------------------------------------------- drawer and apps
 
-    private void openDrawer(String query) {
-        if (drawerOpen) {
-            if (drawer != null && query != null && !query.isEmpty()) {
-                drawer.setQuery(query);
-            }
-            return;
-        }
-        searchBar.hideKeyboard();
-        drawerOpen = true;
-        drawer = new AppDrawer(activity, settings, allApps, new AppDrawer.Callback() {
+    private AppDrawer createDrawer() {
+        return new AppDrawer(activity, settings, allApps, new AppDrawer.Callback() {
             @Override
             public void onRequestClose() {
                 closeDrawer();
@@ -403,11 +420,23 @@ public class HomeScreen extends FrameLayout {
                 showAddToHomeDialog(app);
             }
         });
+    }
+
+    private void openDrawer(String query) {
+        if (drawerOpen) {
+            if (drawer != null && query != null && !query.isEmpty()) {
+                drawer.setQuery(query);
+            }
+            return;
+        }
+        searchBar.hideKeyboard();
+        drawerOpen = true;
+        AppDrawer prepared = cachedDrawer;
+        cachedDrawer = null;
+        drawer = prepared != null ? prepared : createDrawer();
         addView(drawer, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
-        if (query != null && !query.isEmpty()) {
-            drawer.setQuery(query);
-        }
+        drawer.setQuery(query == null ? "" : query);
         drawer.animateIn();
     }
 
@@ -417,12 +446,16 @@ public class HomeScreen extends FrameLayout {
         }
         drawerOpen = false;
         final AppDrawer target = drawer;
+        final int generation = drawerGeneration;
         drawer = null;
         target.animateOut(new Runnable() {
             @Override
             public void run() {
                 if (target.getParent() == HomeScreen.this) {
                     removeView(target);
+                }
+                if (!activity.isFinishing() && generation == drawerGeneration && drawer == null) {
+                    cachedDrawer = target;
                 }
             }
         });
@@ -618,6 +651,8 @@ public class HomeScreen extends FrameLayout {
 
     /** Reloads applications (visibility included) and repaints the whole launcher. */
     public void refreshEverything() {
+        drawerGeneration++;
+        cachedDrawer = null;
         reloadApps();
         applyTheme();
         applyBackground();
@@ -629,6 +664,8 @@ public class HomeScreen extends FrameLayout {
     }
 
     public void onSettingsChanged() {
+        drawerGeneration++;
+        cachedDrawer = null;
         applyTheme();
         applyBackground();
         dock.applyTheme();
@@ -694,6 +731,8 @@ public class HomeScreen extends FrameLayout {
 
     public void release() {
         handler.removeCallbacks(clockTick);
+        handler.removeCallbacks(prewarmDrawer);
+        ioExecutor.shutdownNow();
         if (widgetHost != null) {
             widgetHost.release();
         }
@@ -724,13 +763,47 @@ public class HomeScreen extends FrameLayout {
     }
 
     public void applyBackground() {
-        Drawable background = null;
         int mode = settings.getBackgroundMode();
         if (mode == LauncherSettings.BG_IMAGE) {
-            background = loadWallpaperFile();
-        } else if (mode == LauncherSettings.BG_SYSTEM) {
-            background = loadSystemWallpaper();
+            final String path = settings.getBackgroundPath();
+            if (path != null && path.equals(wallpaperPath) && wallpaperBitmap != null) {
+                wallpaperView.setImageDrawable(
+                        new BitmapDrawable(activity.getResources(), wallpaperBitmap));
+                applyScrim();
+                return;
+            }
+            wallpaperView.setImageDrawable(defaultBackground());
+            applyScrim();
+            final int request = ++wallpaperRequest;
+            ioExecutor.execute(new Runnable() {
+                @Override
+                public void run() {
+                    final Bitmap bitmap = decodeWallpaperFile(path);
+                    handler.post(new Runnable() {
+                        @Override
+                        public void run() {
+                            if (request != wallpaperRequest
+                                    || settings.getBackgroundMode() != LauncherSettings.BG_IMAGE
+                                    || path == null
+                                    || !path.equals(settings.getBackgroundPath())) {
+                                return;
+                            }
+                            wallpaperPath = path;
+                            wallpaperBitmap = bitmap;
+                            wallpaperView.setImageDrawable(bitmap != null
+                                    ? new BitmapDrawable(activity.getResources(), bitmap)
+                                    : defaultBackground());
+                            applyScrim();
+                        }
+                    });
+                }
+            });
+            return;
         }
+        wallpaperRequest++;
+        wallpaperPath = null;
+        wallpaperBitmap = null;
+        Drawable background = mode == LauncherSettings.BG_SYSTEM ? loadSystemWallpaper() : null;
         if (background == null) {
             background = defaultBackground();
         }
@@ -762,8 +835,8 @@ public class HomeScreen extends FrameLayout {
         }
     }
 
-    private Drawable loadWallpaperFile() {
-        String path = settings.getBackgroundPath();
+    /** Decodes the chosen wallpaper off the main thread, downsampled for the screen size. */
+    private Bitmap decodeWallpaperFile(String path) {
         if (path == null) {
             return null;
         }
@@ -789,11 +862,7 @@ public class HomeScreen extends FrameLayout {
             if (settings.isLite()) {
                 options.inPreferredConfig = Bitmap.Config.RGB_565;
             }
-            Bitmap bitmap = BitmapFactory.decodeFile(path, options);
-            if (bitmap == null) {
-                return null;
-            }
-            return new BitmapDrawable(activity.getResources(), bitmap);
+            return BitmapFactory.decodeFile(path, options);
         } catch (Throwable t) {
             return null;
         }

@@ -50,6 +50,7 @@ public class HomePageView extends ViewGroup {
 
     private int draggedIndex = -1;
     private int highlightCell = -1;
+    private boolean bound;
 
     private float downX;
     private float downY;
@@ -108,7 +109,32 @@ public class HomePageView extends ViewGroup {
         for (HomeItem item : items) {
             addView(createChild(item));
         }
+        bound = true;
+        setAlpha(1f);
         requestLayout();
+    }
+
+    /** True when the page currently owns its child views. */
+    public boolean isBound() {
+        return bound;
+    }
+
+    /**
+     * Releases the views of a page that is far from the visible one. The widgets stay bound to
+     * the system host, so their state is kept and they are reattached on the next bind().
+     */
+    public void unbind() {
+        if (!bound) {
+            return;
+        }
+        removeAllViews();
+        items.clear();
+        itemBounds.clear();
+        itemStartCells.clear();
+        bound = false;
+        draggedIndex = -1;
+        highlightCell = -1;
+        setAlpha(1f);
     }
 
     // ------------------------------------------------------------------ views
@@ -156,7 +182,9 @@ public class HomePageView extends ViewGroup {
             label.setSingleLine(true);
             label.setEllipsize(TextUtils.TruncateAt.END);
             label.setTextColor(settings.textColor(context));
-            label.setShadowLayer(3f, 0f, 1f, 0x66000000);
+            if (!settings.isLite()) {
+                label.setShadowLayer(3f, 0f, 1f, 0x66000000);
+            }
             cell.addView(label);
         }
         return cell;
@@ -233,7 +261,9 @@ public class HomePageView extends ViewGroup {
             label.setSingleLine(true);
             label.setEllipsize(TextUtils.TruncateAt.END);
             label.setTextColor(settings.textColor(context));
-            label.setShadowLayer(3f, 0f, 1f, 0x66000000);
+            if (!settings.isLite()) {
+                label.setShadowLayer(3f, 0f, 1f, 0x66000000);
+            }
             cell.addView(label);
         }
         return cell;
@@ -412,8 +442,13 @@ public class HomePageView extends ViewGroup {
     }
 
     public int occupiedCells() {
+        java.util.List<HomeItem> source = items;
+        if (!bound) {
+            HomeLayout.Page page = pager.getLayout().page(pageIndex);
+            source = page != null ? page.items : items;
+        }
         int total = 0;
-        for (HomeItem item : items) {
+        for (HomeItem item : source) {
             total += item.isWidget() ? Math.min(item.getSpanX(), columns) * item.getSpanY() : 1;
         }
         return total;

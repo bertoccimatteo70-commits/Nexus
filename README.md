@@ -19,7 +19,7 @@ Launcher Android scritto in Java, con estetica Pixel e dettagli iOS. Package
 
 ## Nexus UI — impostazioni
 
-Le impostazioni sono una dashboard a schede con ricerca e dieci sezioni animate:
+Le impostazioni sono una dashboard a schede con ricerca e undici sezioni animate:
 
 | Sezione | Contenuto |
 | --- | --- |
@@ -33,8 +33,16 @@ Le impostazioni sono una dashboard a schede con ricerca e dieci sezioni animate:
 | Privacy e sicurezza | Dati locali, permessi, privacy policy, impostazioni permessi di sistema |
 | Sistema | Backup locale, ripristini, launcher predefinito, versione e build |
 | Informazioni su Nexus | Versione, sviluppatore, GPL v3, licenze di terze parti, supporto, repository |
+| Informazioni sul dispositivo | Dispositivo, hardware, memoria, schermo, batteria e dati Nexus, con aggiornamento e copia dei dettagli |
 
 Ogni controllo è collegato a `LauncherSettings` e tutte le modifiche sono persistenti.
+
+## Fluidità
+
+Le pagine della home vengono costruite solo quando entrano nella finestra visibile, il cassetto
+resta in cache dopo la prima apertura e filtra con debounce, gli intent di avvio delle app sono
+memorizzati e lo sfondo personale viene decodificato fuori dal thread principale. Nexus Lite
+disattiva animazioni e ombre e campiona lo sfondo a metà risoluzione.
 
 ## Compilare
 

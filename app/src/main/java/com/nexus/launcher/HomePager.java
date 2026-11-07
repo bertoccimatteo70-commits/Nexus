@@ -42,6 +42,7 @@ public class HomePager extends FrameLayout {
 
     private Listener listener;
     private int currentPage;
+    private int boundCenter = Integer.MIN_VALUE;
     private boolean firstLayout = true;
     private ValueAnimator scrollAnimator;
 
@@ -71,9 +72,17 @@ public class HomePager extends FrameLayout {
         }
     };
 
+    private final Runnable trimRunnable = new Runnable() {
+        @Override
+        public void run() {
+            trimAround(currentPage);
+        }
+    };
+
     private final Runnable restoreScroll = new Runnable() {
         @Override
         public void run() {
+            bindAround(currentPage);
             strip.scrollTo(currentPage * pageWidth(), 0);
             applyPageAlpha();
             updateDots();
@@ -178,10 +187,10 @@ public class HomePager extends FrameLayout {
         }
         strip.removeAllViews();
         pageViews.clear();
+        boundCenter = Integer.MIN_VALUE;
         int count = layout.pageCount();
         for (int i = 0; i < count; i++) {
             HomePageView page = new HomePageView(this, settings, i);
-            page.bind();
             pageViews.add(page);
             strip.addView(page, new ViewGroup.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
@@ -191,6 +200,7 @@ public class HomePager extends FrameLayout {
             currentPage = layout.defaultPage();
         }
         currentPage = Math.max(0, Math.min(currentPage, Math.max(0, pageViews.size() - 1)));
+        bindAround(currentPage);
         buildDots();
         strip.requestLayout();
         post(restoreScroll);
@@ -254,24 +264,71 @@ public class HomePager extends FrameLayout {
             return;
         }
         page = Math.max(0, Math.min(page, pageViews.size() - 1));
+        int previous = currentPage;
         currentPage = page;
+        bindAround(page);
         int targetX = page * pageWidth();
-        if (animate && animationsOn()) {
+        boolean smooth = animate && animationsOn() && Math.abs(page - previous) <= 1;
+        if (smooth) {
             animateScrollTo(targetX);
+            handler.removeCallbacks(trimRunnable);
+            handler.postDelayed(trimRunnable, 400L);
         } else {
             cancelScrollAnimation();
+            handler.removeCallbacks(trimRunnable);
             strip.scrollTo(targetX, 0);
+            trimAround(page);
         }
         applyPageAlpha();
         updateDots();
         applyWidgetSizes();
     }
 
+    /**
+     * Binds the visible page and its immediate neighbours only. Pages outside that window stay
+     * as empty shells until they are needed, which keeps startup, page switches and swipes
+     * cheap even with many pages, apps and widgets.
+     */
+    private void bindAround(int page) {
+        if (pageViews.isEmpty()) {
+            return;
+        }
+        int clamped = Math.max(0, Math.min(page, pageViews.size() - 1));
+        if (clamped == boundCenter) {
+            return;
+        }
+        boundCenter = clamped;
+        int from = Math.max(0, clamped - 1);
+        int to = Math.min(pageViews.size() - 1, clamped + 1);
+        for (int i = from; i <= to; i++) {
+            HomePageView view = pageViews.get(i);
+            if (!view.isBound()) {
+                view.bind();
+            }
+        }
+    }
+
+    private void trimAround(int page) {
+        if (dragging) {
+            return;
+        }
+        for (int i = 0; i < pageViews.size(); i++) {
+            if (Math.abs(i - page) > 1) {
+                HomePageView view = pageViews.get(i);
+                if (view.isBound()) {
+                    view.unbind();
+                }
+            }
+        }
+    }
+
     public void scrollByPixels(float delta) {
         cancelScrollAnimation();
         int max = Math.max(0, (pageViews.size() - 1) * pageWidth());
         int target = (int) (strip.getScrollX() + delta);
-        strip.scrollTo(Math.max(0, Math.min(max, target)), 0);
+        target = Math.max(0, Math.min(max, target));
+        strip.scrollTo(target, 0);
+        bindAround(Math.round((float) target / pageWidth()));
         applyPageAlpha();
     }
 
@@ -308,20 +365,14 @@ public class HomePager extends FrameLayout {
 
     /** Cross-fades pages when the user picked theDissolvenza page transition. */
     private void applyPageAlpha() {
-        if (pageViews.isEmpty()) {
-            return;
-        }
-        if (settings.getPageEffect() != LauncherSettings.PAGE_FADE) {
-            for (HomePageView page : pageViews) {
-                if (page.getAlpha() != 1f) {
-                    page.setAlpha(1f);
-                }
-            }
+        if (pageViews.isEmpty() || settings.getPageEffect() != LauncherSettings.PAGE_FADE) {
             return;
         }
         float width = pageWidth();
         float offset = strip.getScrollX() / width;
-        for (int i = 0; i < pageViews.size(); i++) {
+        int from = Math.max(0, (int) Math.floor(offset) - 1);
+        int to = Math.min(pageViews.size() - 1, (int) Math.ceil(offset) + 1);
+        for (int i = from; i <= to; i++) {
             float distance = Math.min(1f, Math.abs(i - offset));
             pageViews.get(i).setAlpha(1f - distance * 0.8f);
         }
@@ -337,6 +388,7 @@ public class HomePager extends FrameLayout {
     public void settlePages() {
         int page = Math.round((float) strip.getScrollX() / pageWidth());
         setCurrentPage(page, settings.getPageEffect() != LauncherSettings.PAGE_NONE);
+        trimAround(page);
     }
 
     // ------------------------------------------------------------------- drag
@@ -531,6 +583,8 @@ public class HomePager extends FrameLayout {
     @Override
     protected void onDetachedFromWindow() {
         handler.removeCallbacks(edgeSwitchRunnable);
+        handler.removeCallbacks(trimRunnable);
+        cancelScrollAnimation();
         super.onDetachedFromWindow();
     }
 

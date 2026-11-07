@@ -1,5 +1,8 @@
 package com.nexus.launcher;
 
+import android.content.ClipData;
+import android.content.ClipboardManager;
+import android.content.Context;
 import android.content.Intent;
 import android.content.res.ColorStateList;
 import android.graphics.Typeface;
@@ -44,11 +47,12 @@ public class SettingsHub extends FrameLayout {
     private static final int CAT_PRIVACY = 7;
     private static final int CAT_SYSTEM = 8;
     private static final int CAT_ABOUT = 9;
+    private static final int CAT_DEVICE = 10;
 
     private static final String[] CATEGORY_TITLES = {
             "Personalizzazione", "Schermata Home", "Schermo e luminosità", "Animazioni",
-            "Applicazioni", "Widget", "Prestazioni", "Privacy e sicurezza", "Sistema",
-            "Informazioni su Nexus"
+            "Applicazioni",            "Widget", "Prestazioni", "Privacy e sicurezza", "Sistema",
+            "Informazioni su Nexus", "Informazioni sul dispositivo"
     };
 
     private static final String[] CATEGORY_DESCRIPTIONS = {
@@ -61,14 +65,15 @@ public class SettingsHub extends FrameLayout {
             "Nexus e Nexus Lite: differenze e modalità attiva",
             "Dove restano i dati e quali permessi usa il launcher",
             "Backup locale, ripristini, versione e build",
-            "Licenza, crediti, supporto e repository"
+            "Licenza, crediti, supporto e repository",
+            "Hardware, memoria, batteria e dati di sistema"
     };
 
     private static final int[] CATEGORY_ICONS = {
             R.drawable.ic_set_palette, R.drawable.ic_set_home, R.drawable.ic_set_display,
             R.drawable.ic_set_animation, R.drawable.ic_apps, R.drawable.ic_set_widget,
             R.drawable.ic_set_performance, R.drawable.ic_set_privacy,
-            R.drawable.ic_set_system, R.drawable.ic_set_info
+            R.drawable.ic_set_system, R.drawable.ic_set_info, R.drawable.ic_set_device
     };
 
     private static final String[] CATEGORY_KEYWORDS = {
@@ -81,7 +86,9 @@ public class SettingsHub extends FrameLayout {
             "prestazioni nexus lite modalita memoria batteria",
             "privacy sicurezza dati permessi policy legale",
             "backup ripristina reset versione build launcher predefinito",
-            "informazioni licenza gpl crediti supporto github copyright"
+            "informazioni licenza gpl crediti supporto github copyright",
+            "dispositivo hardware batteria processore ram memoria schermo densita frequenza "
+                    + "aggiornamento temperatura modello produttore android build"
     };
 
     /** Deep links used by the search bar on the dashboard. */
@@ -98,7 +105,9 @@ public class SettingsHub extends FrameLayout {
             {"Nexus Lite", "Modalità leggera per dispositivi meno potenti", "6", "lite prestazioni"},
             {"Backup locale", "Esporta o importa la configurazione", "8", "backup esporta importa"},
             {"Licenza GPL v3", "Termini di utilizzo del codice", "9", "licenza gpl"},
-            {"Privacy policy", "Come Nexus tratta i dati", "7", "privacy dati policy"}
+            {"Privacy policy", "Come Nexus tratta i dati", "7", "privacy dati policy"},
+            {"Informazioni sul dispositivo", "Hardware, batteria e build di Android", "10",
+                    "dispositivo hardware batteria processore ram memoria schermo"}
     };
 
     private static final String REPO_URL = "https://github.com/bertoccimatteo70-commits/Nexus";
@@ -228,6 +237,8 @@ public class SettingsHub extends FrameLayout {
                 return buildSystem();
             case CAT_ABOUT:
                 return buildAbout();
+            case CAT_DEVICE:
+                return buildDeviceInfo();
             default:
                 return createDashboard();
         }
@@ -1744,6 +1755,14 @@ public class SettingsHub extends FrameLayout {
                         row(content, "Android", "Versione del sistema",
                                 Build.VERSION.RELEASE + " (API " + Build.VERSION.SDK_INT + ")", null);
                         row(content, "Dispositivo", "Modello rilevato", Build.MODEL, null);
+                        row(content, "Informazioni sul dispositivo",
+                                "Hardware, memoria, batteria e schermo", null,
+                                new Runnable() {
+                                    @Override
+                                    public void run() {
+                                        navigate(CAT_DEVICE);
+                                    }
+                                });
 
                         row(content, "Informazioni su Nexus", "Licenza, crediti e supporto", null,
                                 new Runnable() {
@@ -1761,6 +1780,210 @@ public class SettingsHub extends FrameLayout {
             activity.startActivity(new Intent(action));
         } catch (Exception e) {
             toast(errorMessage);
+        }
+    }
+
+    // ------------------------------------------------------------- device info
+
+    private View buildDeviceInfo() {
+        return buildPage("Informazioni sul dispositivo", "Dati reali letti dal sistema",
+                new Body() {
+                    @Override
+                    public void build(LinearLayout content) {
+                        content.addView(deviceHero());
+                        content.addView(deviceActions());
+                        for (DeviceInfo.Section section : DeviceInfo.collect(activity)) {
+                            sectionLabel(content, section.title);
+                            content.addView(infoCard(section));
+                        }
+                        bodyText(content, "I valori arrivano dalle API pubbliche di Android e "
+                                + "vengono riletti ogni volta che apri o aggiorni questa "
+                                + "schermata. Le informazioni che il sistema non espone restano "
+                                + "indicate come non disponibili: nessun dato è simulato.");
+                    }
+                });
+    }
+
+    private View deviceHero() {
+        LinearLayout card = new LinearLayout(activity);
+        card.setOrientation(LinearLayout.HORIZONTAL);
+        card.setGravity(Gravity.CENTER_VERTICAL);
+        card.setPadding(Ui.dp(activity, 16), Ui.dp(activity, 18),
+                Ui.dp(activity, 16), Ui.dp(activity, 18));
+        card.setBackground(Ui.rounded(settings.cardColor(activity), Ui.dp(activity, 24),
+                Ui.dp(activity, 1), settings.rowBackground(activity)));
+
+        int tint = LauncherSettings.CATEGORY_TINTS[10];
+        int size = Ui.dp(activity, 56);
+        FrameLayout iconBox = new FrameLayout(activity);
+        iconBox.setBackground(Ui.rounded(tint, Ui.dp(activity, 18)));
+        ImageView icon = new ImageView(activity);
+        icon.setImageResource(R.drawable.ic_set_device);
+        icon.setColorFilter(darken(tint));
+        icon.setPadding(Ui.dp(activity, 13), Ui.dp(activity, 13),
+                Ui.dp(activity, 13), Ui.dp(activity, 13));
+        iconBox.addView(icon, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+        card.addView(iconBox, new LinearLayout.LayoutParams(size, size));
+
+        LinearLayout texts = new LinearLayout(activity);
+        texts.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout.LayoutParams textsParams = new LinearLayout.LayoutParams(0,
+                LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+        textsParams.leftMargin = Ui.dp(activity, 14);
+        texts.addView(text(DeviceInfo.deviceName(), 18f, settings.textColor(activity), true));
+        LinearLayout.LayoutParams subParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        subParams.topMargin = Ui.dp(activity, 3);
+        texts.addView(text(DeviceInfo.androidSummary(), 12.5f,
+                settings.secondaryTextColor(activity), false), subParams);
+        LinearLayout.LayoutParams modeParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        modeParams.topMargin = Ui.dp(activity, 3);
+        texts.addView(text("Nexus " + BuildConfig.VERSION_NAME + " · "
+                + settings.launcherModeName(), 11.5f, accentColor(), false), modeParams);
+        card.addView(texts, textsParams);
+
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        params.topMargin = Ui.dp(activity, 4);
+        card.setLayoutParams(params);
+        return card;
+    }
+
+    private View deviceActions() {
+        LinearLayout row = new LinearLayout(activity);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+
+        TextView refresh = actionPill("Aggiorna");
+        refresh.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                refreshPage();
+                toast("Dati aggiornati");
+            }
+        });
+        row.addView(refresh, new LinearLayout.LayoutParams(0,
+                LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+
+        TextView copy = actionPill("Copia dettagli");
+        LinearLayout.LayoutParams copyParams = new LinearLayout.LayoutParams(0,
+                LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+        copyParams.leftMargin = Ui.dp(activity, 8);
+        copy.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                copyDeviceInfo();
+            }
+        });
+        row.addView(copy, copyParams);
+
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        params.topMargin = Ui.dp(activity, 10);
+        row.setLayoutParams(params);
+        return row;
+    }
+
+    private TextView actionPill(String label) {
+        TextView pill = text(label, 13f, accentColor(), true);
+        pill.setGravity(Gravity.CENTER);
+        pill.setPadding(Ui.dp(activity, 10), Ui.dp(activity, 11),
+                Ui.dp(activity, 10), Ui.dp(activity, 11));
+        pill.setBackground(Ui.rounded((accentColor() & 0x00FFFFFF) | 0x22000000,
+                Ui.dp(activity, 18)));
+        pill.setClickable(true);
+        return pill;
+    }
+
+    private View infoCard(DeviceInfo.Section section) {
+        LinearLayout card = new LinearLayout(activity);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(Ui.dp(activity, 16), Ui.dp(activity, 14),
+                Ui.dp(activity, 16), Ui.dp(activity, 8));
+        card.setBackground(Ui.rounded(settings.cardColor(activity), Ui.dp(activity, 24),
+                Ui.dp(activity, 1), settings.rowBackground(activity)));
+
+        LinearLayout header = new LinearLayout(activity);
+        header.setOrientation(LinearLayout.HORIZONTAL);
+        header.setGravity(Gravity.CENTER_VERTICAL);
+
+        FrameLayout iconBox = new FrameLayout(activity);
+        iconBox.setBackground(Ui.rounded(section.tint, Ui.dp(activity, 13)));
+        ImageView icon = new ImageView(activity);
+        icon.setImageResource(section.iconRes);
+        icon.setColorFilter(darken(section.tint));
+        icon.setPadding(Ui.dp(activity, 9), Ui.dp(activity, 9),
+                Ui.dp(activity, 9), Ui.dp(activity, 9));
+        iconBox.addView(icon, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+        header.addView(iconBox, new LinearLayout.LayoutParams(
+                Ui.dp(activity, 38), Ui.dp(activity, 38)));
+
+        LinearLayout titles = new LinearLayout(activity);
+        titles.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout.LayoutParams titlesParams = new LinearLayout.LayoutParams(0,
+                LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+        titlesParams.leftMargin = Ui.dp(activity, 12);
+        titles.addView(text(section.title, 15.5f, settings.textColor(activity), true));
+        TextView subtitle = text(section.subtitle, 11.5f,
+                settings.secondaryTextColor(activity), false);
+        LinearLayout.LayoutParams subtitleParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        subtitleParams.topMargin = Ui.dp(activity, 2);
+        titles.addView(subtitle, subtitleParams);
+        header.addView(titles, titlesParams);
+        card.addView(header);
+
+        for (DeviceInfo.Row row : section.rows) {
+            LinearLayout line = new LinearLayout(activity);
+            line.setOrientation(LinearLayout.HORIZONTAL);
+            line.setGravity(Gravity.CENTER_VERTICAL);
+            LinearLayout.LayoutParams lineParams = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+            lineParams.topMargin = Ui.dp(activity, 11);
+
+            TextView label = text(row.label, 12.5f,
+                    settings.secondaryTextColor(activity), false);
+            line.addView(label, new LinearLayout.LayoutParams(0,
+                    LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+
+            TextView value = text(row.value, 12.5f,
+                    row.available ? settings.textColor(activity)
+                            : settings.secondaryTextColor(activity), false);
+            value.setGravity(Gravity.END);
+            value.setMaxLines(3);
+            value.setLineSpacing(Ui.dp(activity, 2), 1f);
+            if (!row.available) {
+                value.setTypeface(value.getTypeface(), Typeface.ITALIC);
+            }
+            LinearLayout.LayoutParams valueParams = new LinearLayout.LayoutParams(0,
+                    LinearLayout.LayoutParams.WRAP_CONTENT, 1.15f);
+            valueParams.leftMargin = Ui.dp(activity, 14);
+            line.addView(value, valueParams);
+            card.addView(line, lineParams);
+        }
+
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        params.bottomMargin = Ui.dp(activity, 8);
+        card.setLayoutParams(params);
+        return card;
+    }
+
+    private void copyDeviceInfo() {
+        ClipboardManager clipboard = (ClipboardManager) activity
+                .getSystemService(Context.CLIPBOARD_SERVICE);
+        if (clipboard == null) {
+            toast("Appunti non disponibili");
+            return;
+        }
+        try {
+            clipboard.setPrimaryClip(ClipData.newPlainText(
+                    "Nexus · informazioni dispositivo", DeviceInfo.toPlainText(activity)));
+            toast("Dettagli copiati negli appunti");
+        } catch (Exception e) {
+            toast("Impossibile copiare i dettagli");
         }
     }
 

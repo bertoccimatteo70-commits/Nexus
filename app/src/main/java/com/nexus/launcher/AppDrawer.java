@@ -1,5 +1,7 @@
 package com.nexus.launcher;
 
+import android.os.Handler;
+import android.os.Looper;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.FrameLayout;
@@ -33,6 +35,16 @@ public class AppDrawer extends FrameLayout {
     private final TextView countView;
 
     private final List<AppInfo> sorted = new ArrayList<>();
+    private final Handler handler = new Handler(Looper.getMainLooper());
+
+    private String lastQuery = null;
+    private String pendingQuery = "";
+    private final Runnable pendingFilter = new Runnable() {
+        @Override
+        public void run() {
+            applyFilter(pendingQuery);
+        }
+    };
 
     public AppDrawer(MainActivity activity, LauncherSettings settings, List<AppInfo> apps,
                      Callback callback) {
@@ -131,7 +143,7 @@ public class AppDrawer extends FrameLayout {
             }
         });
 
-        search.setOnQueryChangeListener(query -> applyFilter(query));
+        search.setOnQueryChangeListener(query -> scheduleFilter(query));
         applyFilter("");
 
         setAlpha(settings.isLite() ? 1f : 0f);
@@ -139,9 +151,25 @@ public class AppDrawer extends FrameLayout {
 
     public void setQuery(String query) {
         search.setQuery(query);
+        applyFilter(query == null ? "" : query);
+    }
+
+    /**
+     * Typing is debounced so a large app list is filtered once per short pause instead of on
+     * every keystroke, which keeps the drawer responsive while the keyboard is open.
+     */
+    private void scheduleFilter(String query) {
+        pendingQuery = query == null ? "" : query;
+        handler.removeCallbacks(pendingFilter);
+        handler.postDelayed(pendingFilter, 45L);
     }
 
     private void applyFilter(String query) {
+        if (query != null && query.equals(lastQuery)) {
+            return;
+        }
+        lastQuery = query;
+        handler.removeCallbacks(pendingFilter);
         List<AppInfo> filtered = new ArrayList<>();
         for (AppInfo app : sorted) {
             if (app.matches(query)) {
@@ -171,6 +199,12 @@ public class AppDrawer extends FrameLayout {
         setAlpha(0f);
         animate().alpha(1f).setDuration(duration).start();
         panel.animate().translationY(0f).setDuration(duration).start();
+    }
+
+    @Override
+    protected void onDetachedFromWindow() {
+        handler.removeCallbacks(pendingFilter);
+        super.onDetachedFromWindow();
     }
 
     public void animateOut(final Runnable done) {

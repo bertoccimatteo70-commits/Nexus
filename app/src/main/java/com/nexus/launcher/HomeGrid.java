@@ -151,7 +151,9 @@ public class HomeGrid extends GridView {
         label.setMaxLines(1);
         label.setSingleLine(true);
         label.setEllipsize(TextUtils.TruncateAt.END);
-        label.setShadowLayer(3f, 0f, 1f, 0x59000000);
+        if (!settings.isLite()) {
+            label.setShadowLayer(3f, 0f, 1f, 0x59000000);
+        }
 
         item.addView(icon);
         item.addView(label);
